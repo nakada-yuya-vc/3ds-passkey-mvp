@@ -1,0 +1,100 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id             String   @id @default(uuid())
+  cardNumberHash String   @unique
+  email          String?
+  phone          String?
+  createdAt      DateTime @default(now())
+
+  credentials  WebAuthnCredential[]
+  transactions Transaction[]
+  devices      DeviceFingerprint[]
+}
+
+model WebAuthnCredential {
+  id     String @id @default(uuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  credentialId String   @unique
+  publicKey    Bytes
+  signCount    Int      @default(0)
+  aaguid       String?
+  transports   String[]
+  spcCapable   Boolean  @default(false)
+
+  createdAt  DateTime  @default(now())
+  lastUsedAt DateTime?
+}
+
+model Transaction {
+  id                   String  @id @default(uuid())
+  threeDSServerTransId String  @unique
+  acsTransId           String  @unique @default(uuid())
+
+  userId         String?
+  user           User?   @relation(fields: [userId], references: [id])
+  cardNumberHash String
+  merchantId     String
+  merchantName   String?
+  purchaseAmount Int
+  purchaseCurrency String @default("392")
+
+  authType   AuthType
+  authResult AuthResult
+  frictionless Boolean @default(false)
+
+  requestedAt        DateTime  @default(now())
+  challengeStartedAt DateTime?
+  otpCompletedAt     DateTime?
+  authenticatedAt    DateTime?
+
+  enrolledPasskey Boolean @default(false)
+
+  deviceKnown Boolean?
+  deviceHash  String?
+  ipAddress   String?
+}
+
+enum AuthType {
+  FRICTIONLESS
+  OTP
+  PASSKEY
+  PASSKEY_SPC
+}
+
+enum AuthResult {
+  AUTHENTICATED
+  NOT_AUTHENTICATED
+  ATTEMPTED
+}
+
+model DeviceFingerprint {
+  id     String @id @default(uuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  deviceHash       String
+  firstSeenAt      DateTime @default(now())
+  lastSeenAt       DateTime @updatedAt
+  transactionCount Int      @default(1)
+  trusted          Boolean  @default(false)
+
+  @@unique([userId, deviceHash])
+}
+
+model OtpSession {
+  id         String   @id @default(uuid())
+  acsTransId String   @unique
+  otpCode    String
+  expiresAt  DateTime
+  verified   Boolean  @default(false)
+}

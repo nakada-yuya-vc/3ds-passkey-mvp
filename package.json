@@ -1,0 +1,17 @@
+{
+  "name": "passkey-mvp",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently -n server,challenge,merchant,dashboard -c cyan,blue,green,magenta \"pnpm --filter server dev\" \"pnpm --filter challenge-ui dev\" \"pnpm --filter merchant dev\" \"pnpm --filter dashboard dev\"",
+    "build": "pnpm -r build",
+    "db:up": "docker-compose up -d",
+    "db:migrate": "pnpm --filter server prisma:migrate",
+    "db:push": "pnpm --filter server prisma:push",
+    "db:generate": "pnpm --filter server prisma:generate",
+    "setup": "pnpm install && docker-compose up -d && pnpm --filter server prisma:push"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

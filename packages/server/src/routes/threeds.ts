@@ -74,7 +74,17 @@ export async function threedsRoutes(server: FastifyInstance) {
 
     let authType: 'FRICTIONLESS' | 'OTP' | 'PASSKEY' | 'PASSKEY_SPC' = 'FRICTIONLESS'
     if (!isFreictionless) {
-      authType = hasPasskey ? 'PASSKEY' : 'OTP'
+      const hint = rbaResult.authTypeHint
+      if (hint === 'otp') {
+        // カードが常にOTPを要求（Passkey登録済みでも強制OTP）
+        authType = 'OTP'
+      } else if (hint === 'passkey') {
+        // カードが常にPasskeyを要求
+        authType = 'PASSKEY'
+      } else {
+        // auto: Passkey登録済みならPasskey、なければOTP
+        authType = hasPasskey ? 'PASSKEY' : 'OTP'
+      }
     }
 
     await prisma.transaction.create({

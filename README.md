@@ -260,6 +260,42 @@ OtpSession  (temporary OTP session)
 
 ---
 
+## Browser Constraints
+
+Passkey behavior varies significantly between browsers. Understanding these constraints is important when testing this MVP.
+
+### Passkey storage is tied to each browser ecosystem
+
+Each browser saves passkeys to its own backend. **A passkey registered in one browser cannot be used in another.**
+
+| Browser | Passkey storage | Cross-browser use |
+|---------|----------------|-------------------|
+| Microsoft Edge | Windows Hello (local TPM) | ❌ Edge only |
+| Google Chrome | Google Password Manager (cloud sync) | ❌ Chrome only |
+| Safari | iCloud Keychain (Apple ecosystem sync) | ❌ Apple devices only |
+| Cross-browser | Via Bluetooth / QR code (CTAP2 hybrid) | ⚠️ Requires phone nearby |
+
+### Edge vs Chrome behave differently
+
+- **Edge** routes directly to Windows Hello (Microsoft's own platform), prompting for Windows Hello PIN or biometrics.
+- **Chrome** checks Google Password Manager first. If the credential isn't there (e.g. it was registered via Edge), Chrome falls back to showing a cross-device (Bluetooth/QR) prompt instead of Windows Hello — even if the credential exists in Windows Hello.
+
+> In this MVP, registering and authenticating within the **same browser** is required. This mirrors real-world usage where users authenticate on a single device/ecosystem.
+
+### Windows Hello uses a PIN, not just biometrics
+
+On Windows, passkey authentication via Windows Hello may prompt for a **PIN** rather than a fingerprint or face scan, depending on device configuration. This is by design — the PIN is device-local and does not travel over the network, making it fundamentally different from an OTP.
+
+### Recommended test environment
+
+| Condition | Recommended setup |
+|-----------|------------------|
+| Full passkey flow | Use a single browser throughout (register + authenticate) |
+| Biometric auth (no PIN) | Use a device with fingerprint reader or Face ID configured in Windows Hello |
+| Cross-device test | Enable Bluetooth and use a phone with the same Google/Apple account |
+
+---
+
 ## Troubleshooting
 
 ### "The 'publickey-credentials-create' feature is not enabled" during Passkey registration

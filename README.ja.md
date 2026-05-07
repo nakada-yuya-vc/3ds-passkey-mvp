@@ -266,12 +266,14 @@ OtpSession（OTP 一時セッション）
 
 各ブラウザはパスキーをそれぞれ独自のバックエンドに保存します。**あるブラウザで登録したパスキーは別のブラウザでは使えません。**
 
-| ブラウザ | 保存先 | クロスブラウザ利用 |
-|---------|--------|-----------------|
-| Microsoft Edge | Windows Hello（ローカル TPM） | ❌ Edge のみ |
-| Google Chrome | Google パスワードマネージャー（クラウド同期） | ❌ Chrome のみ |
-| Safari | iCloud キーチェーン（Apple エコシステム同期） | ❌ Apple デバイスのみ |
-| クロスブラウザ | Bluetooth / QR コード（CTAP2 ハイブリッド） | ⚠️ 近くにスマホが必要 |
+| ブラウザ | 保存先 | SPC 対応 | クロスブラウザ利用 |
+|---------|--------|---------|-----------------|
+| Microsoft Edge | Windows Hello（ローカル TPM） | ✅ | ❌ Edge のみ |
+| Google Chrome | Google パスワードマネージャー（クラウド同期） | ✅ | ❌ Chrome のみ |
+| Safari | iCloud キーチェーン（Apple エコシステム同期） | ❌ 未対応 | ❌ Apple デバイスのみ |
+| クロスブラウザ | Bluetooth / QR コード（CTAP2 ハイブリッド） | — | ⚠️ 近くにスマホが必要 |
+
+> **補足:** SPC（Secure Payment Confirmation）は Chromium ベースのブラウザ（Chrome・Edge）のみ対応です。Safari は WebAuthn / パスキーによる通常認証には対応していますが、SPC が必要とする Payment Request API と WebAuthn の統合は未実装です。
 
 ### Edge と Chrome で挙動が異なる
 

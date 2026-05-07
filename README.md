@@ -268,12 +268,14 @@ Passkey behavior varies significantly between browsers. Understanding these cons
 
 Each browser saves passkeys to its own backend. **A passkey registered in one browser cannot be used in another.**
 
-| Browser | Passkey storage | Cross-browser use |
-|---------|----------------|-------------------|
-| Microsoft Edge | Windows Hello (local TPM) | ❌ Edge only |
-| Google Chrome | Google Password Manager (cloud sync) | ❌ Chrome only |
-| Safari | iCloud Keychain (Apple ecosystem sync) | ❌ Apple devices only |
-| Cross-browser | Via Bluetooth / QR code (CTAP2 hybrid) | ⚠️ Requires phone nearby |
+| Browser | Passkey storage | SPC support | Cross-browser use |
+|---------|----------------|-------------|-------------------|
+| Microsoft Edge | Windows Hello (local TPM) | ✅ | ❌ Edge only |
+| Google Chrome | Google Password Manager (cloud sync) | ✅ | ❌ Chrome only |
+| Safari | iCloud Keychain (Apple ecosystem sync) | ❌ Not supported | ❌ Apple devices only |
+| Cross-browser | Via Bluetooth / QR code (CTAP2 hybrid) | — | ⚠️ Requires phone nearby |
+
+> **Note:** SPC (Secure Payment Confirmation) is only supported in Chromium-based browsers (Chrome and Edge). Safari supports WebAuthn/Passkeys for general authentication but has not implemented the Payment Request API + WebAuthn integration required for SPC.
 
 ### Edge vs Chrome behave differently
 

@@ -35,7 +35,7 @@ export function SpcChallenge({ acsTransId, credentials, merchantName, amount, on
 
     try {
       const optRes = await fetch(`/spc/options?acsTransId=${acsTransId}`)
-      if (!optRes.ok) throw new Error('SPC オプション取得失敗')
+      if (!optRes.ok) throw new Error('Failed to fetch SPC options')
       const opts = await optRes.json()
 
       const spcCredentials = credentials.filter(c => c.spcCapable)
@@ -75,13 +75,13 @@ export function SpcChallenge({ acsTransId, credentials, merchantName, amount, on
 
       if (!verifyRes.ok) {
         await response.complete('fail')
-        throw new Error('SPC 認証失敗')
+        throw new Error('SPC authentication failed')
       }
 
       await response.complete('success')
       onSuccess()
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : '不明なエラー'
+      const msg = e instanceof Error ? e.message : 'Unknown error'
       setError(msg)
       setLoading(false)
     }
@@ -90,20 +90,20 @@ export function SpcChallenge({ acsTransId, credentials, merchantName, amount, on
   return (
     <div style={s.container}>
       <div style={s.icon}>💳</div>
-      <h3 style={s.title}>お支払い認証</h3>
+      <h3 style={s.title}>Payment Authentication</h3>
       <p style={s.desc}>
-        Secure Payment Confirmation でお支払いを承認します。
-        <br />生体認証で安全に確認してください。
+        Approve your payment with Secure Payment Confirmation.
+        <br />Use biometrics to confirm securely.
       </p>
       {loading && (
         <div style={s.spinner}>
-          <p style={s.loadingText}>ブラウザの認証ダイアログを確認してください...</p>
+          <p style={s.loadingText}>Check the browser authentication dialog...</p>
         </div>
       )}
       {error && (
         <div>
           <p style={s.error}>{error}</p>
-          <button style={s.btn} onClick={triggerSPC}>再試行</button>
+          <button style={s.btn} onClick={triggerSPC}>Retry</button>
         </div>
       )}
     </div>

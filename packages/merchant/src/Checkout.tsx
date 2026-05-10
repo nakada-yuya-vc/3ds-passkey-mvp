@@ -4,16 +4,16 @@ import { v4 as uuidv4 } from 'uuid'
 const ACS_URL = 'http://localhost:3004'
 
 const TEST_CARDS = [
-  { pan: '4111111111111111', label: 'frictionless（チャレンジなし）', color: '#48bb78' },
-  { pan: '4111111111111129', label: 'OTP チャレンジ', color: '#ed8936' },
-  { pan: '4111111111111137', label: 'Passkey チャレンジ（登録済み）', color: '#667eea' },
-  { pan: '4111111111111145', label: '高額 → チャレンジ', color: '#e53e3e' },
+  { pan: '4111111111111111', label: 'Frictionless (no challenge)', color: '#48bb78' },
+  { pan: '4111111111111129', label: 'OTP Challenge', color: '#ed8936' },
+  { pan: '4111111111111137', label: 'Passkey Challenge (enrolled)', color: '#667eea' },
+  { pan: '4111111111111145', label: 'High amount → Challenge', color: '#e53e3e' },
 ]
 
 const PRODUCTS = [
-  { id: 'p1', name: 'ワイヤレスイヤホン Pro', price: 12800, image: '🎧' },
-  { id: 'p2', name: 'スマートウォッチ Elite', price: 34800, image: '⌚' },
-  { id: 'p3', name: 'メカニカルキーボード', price: 18500, image: '⌨️' },
+  { id: 'p1', name: 'Wireless Earbuds Pro', price: 12800, image: '🎧' },
+  { id: 'p2', name: 'Smartwatch Elite', price: 34800, image: '⌚' },
+  { id: 'p3', name: 'Mechanical Keyboard', price: 18500, image: '⌨️' },
 ]
 
 type FlowState =
@@ -65,7 +65,7 @@ export function Checkout() {
           threeDSServerTransID: transId,
           cardNumberHash: cardHash,
           merchantID: 'merchant-001',
-          merchantName: 'テストショップ',
+          merchantName: 'Test Shop',
           purchaseAmount: product.price,
           purchaseCurrency: '392',
           deviceChannel: '02',
@@ -86,10 +86,10 @@ export function Checkout() {
         const challengeUrl = `${ACS_URL}/challenge/${data.acsTransID}`
         setState({ step: 'challenge', acsTransId: data.acsTransID, acsURL: challengeUrl })
       } else {
-        setState({ step: 'failure', reason: '認証に失敗しました' })
+        setState({ step: 'failure', reason: 'Authentication failed' })
       }
     } catch (e) {
-      setState({ step: 'failure', reason: 'ネットワークエラー' })
+      setState({ step: 'failure', reason: 'Network error' })
     }
   }
 
@@ -102,11 +102,11 @@ export function Checkout() {
     return (
       <div style={s.page}>
         <header style={s.header}>
-          <span style={s.storeName}>🛍️ テストショップ</span>
+          <span style={s.storeName}>🛍️ Test Shop</span>
           <span style={s.badge}>3DS Passkey MVP</span>
         </header>
         <main style={s.main}>
-          <h2 style={s.heading}>おすすめ商品</h2>
+          <h2 style={s.heading}>Featured Products</h2>
           <div style={s.grid}>
             {PRODUCTS.map(p => (
               <div key={p.id} style={s.productCard}>
@@ -114,7 +114,7 @@ export function Checkout() {
                 <div style={s.productName}>{p.name}</div>
                 <div style={s.productPrice}>¥{p.price.toLocaleString()}</div>
                 <button style={s.buyBtn} onClick={() => startCheckout(p)}>
-                  購入する
+                  Buy Now
                 </button>
               </div>
             ))}
@@ -128,8 +128,8 @@ export function Checkout() {
     return (
       <div style={s.page}>
         <header style={s.header}>
-          <span style={s.storeName}>🛍️ テストショップ</span>
-          <span style={s.badge}>お支払い</span>
+          <span style={s.storeName}>🛍️ Test Shop</span>
+          <span style={s.badge}>Payment</span>
         </header>
         <main style={{ ...s.main, maxWidth: 480, margin: '0 auto' }}>
           <div style={s.orderSummary}>
@@ -140,7 +140,7 @@ export function Checkout() {
             </div>
           </div>
 
-          <h3 style={{ ...s.heading, fontSize: 16, marginBottom: 12 }}>テスト用カード選択</h3>
+          <h3 style={{ ...s.heading, fontSize: 16, marginBottom: 12 }}>Select Test Card</h3>
           <div style={s.cardList}>
             {TEST_CARDS.map(card => (
               <label key={card.pan} style={s.cardOption}>
@@ -165,10 +165,10 @@ export function Checkout() {
             style={s.payBtn}
             onClick={() => submitPayment(state.product)}
           >
-            ¥{state.product.price.toLocaleString()} を支払う
+            Pay ¥{state.product.price.toLocaleString()}
           </button>
           <button style={s.backBtn} onClick={() => setState({ step: 'shop' })}>
-            戻る
+            Back
           </button>
         </main>
       </div>
@@ -179,7 +179,7 @@ export function Checkout() {
     return (
       <div style={s.centered}>
         <div style={s.spinner} />
-        <p style={s.processingText}>処理中...</p>
+        <p style={s.processingText}>Processing...</p>
       </div>
     )
   }
@@ -188,19 +188,19 @@ export function Checkout() {
     return (
       <div style={s.page}>
         <header style={s.header}>
-          <span style={s.storeName}>🛍️ テストショップ</span>
-          <span style={s.badge}>本人確認</span>
+          <span style={s.storeName}>🛍️ Test Shop</span>
+          <span style={s.badge}>Identity Verification</span>
         </header>
         <main style={s.challengeMain}>
           <p style={s.challengeNote}>
-            ご購入を完了するために、本人確認が必要です。
+            Identity verification is required to complete your purchase.
           </p>
           <iframe
             ref={iframeRef}
             src={state.acsURL}
             allow="publickey-credentials-get *; publickey-credentials-create *; payment *"
             style={s.iframe}
-            title="3DS チャレンジ"
+            title="3DS Challenge"
           />
         </main>
       </div>
@@ -211,15 +211,15 @@ export function Checkout() {
     return (
       <div style={s.centered}>
         <div style={s.successIcon}>✓</div>
-        <h2 style={s.successTitle}>ご注文が完了しました</h2>
+        <h2 style={s.successTitle}>Order Complete</h2>
         <p style={s.successSub}>
-          認証方式: <strong>{state.authType}</strong>
+          Auth method: <strong>{state.authType}</strong>
         </p>
         <p style={{ ...s.successSub, fontSize: 12, color: '#aaa', marginTop: 4 }}>
           acsTransId: {state.acsTransId}
         </p>
         <button style={s.restartBtn} onClick={() => setState({ step: 'shop' })}>
-          ショッピングに戻る
+          Continue Shopping
         </button>
       </div>
     )
@@ -229,10 +229,10 @@ export function Checkout() {
     return (
       <div style={s.centered}>
         <div style={s.failIcon}>✗</div>
-        <h2 style={s.failTitle}>認証に失敗しました</h2>
+        <h2 style={s.failTitle}>Authentication Failed</h2>
         <p style={s.successSub}>{state.reason}</p>
         <button style={s.restartBtn} onClick={() => setState({ step: 'shop' })}>
-          やり直す
+          Try Again
         </button>
       </div>
     )

@@ -26,7 +26,7 @@ export function OtpChallenge({ acsTransId, onSuccess }: Props) {
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
-        setError(data.error || 'OTPが正しくありません')
+        setError(data.error || 'Incorrect OTP code')
         return
       }
 
@@ -35,7 +35,7 @@ export function OtpChallenge({ acsTransId, onSuccess }: Props) {
         onSuccess()
       }
     } catch {
-      setError('通信エラーが発生しました')
+      setError('Network error')
     } finally {
       setLoading(false)
     }
@@ -44,10 +44,10 @@ export function OtpChallenge({ acsTransId, onSuccess }: Props) {
   return (
     <div>
       <p style={s.desc}>
-        ご登録の携帯電話に送信されたワンタイムパスワードを入力してください。
+        Enter the one-time password sent to your registered mobile phone.
       </p>
       {process.env.NODE_ENV !== 'production' && (
-        <p style={s.mock}>🔧 テストモード: OTPは <strong>123456</strong></p>
+        <p style={s.mock}>🔧 Test mode: OTP is <strong>123456</strong></p>
       )}
       <form onSubmit={handleSubmit}>
         <input
@@ -56,7 +56,7 @@ export function OtpChallenge({ acsTransId, onSuccess }: Props) {
           inputMode="numeric"
           pattern="[0-9]{6}"
           maxLength={6}
-          placeholder="6桁のコード"
+          placeholder="6-digit code"
           value={code}
           onChange={e => setCode(e.target.value.replace(/\D/g, ''))}
           autoFocus
@@ -67,7 +67,7 @@ export function OtpChallenge({ acsTransId, onSuccess }: Props) {
           type="submit"
           disabled={loading || code.length !== 6}
         >
-          {loading ? '確認中...' : '確認する'}
+          {loading ? 'Verifying...' : 'Verify'}
         </button>
       </form>
     </div>

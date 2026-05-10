@@ -24,7 +24,7 @@ export function PasskeyChallenge({ acsTransId, onSuccess }: Props) {
 
     try {
       const optRes = await fetch(`/webauthn/authenticate/options?acsTransId=${acsTransId}`)
-      if (!optRes.ok) throw new Error('オプション取得失敗')
+      if (!optRes.ok) throw new Error('Failed to fetch options')
       const options = await optRes.json()
 
       const credential = await startAuthentication(options)
@@ -37,14 +37,14 @@ export function PasskeyChallenge({ acsTransId, onSuccess }: Props) {
 
       if (!verifyRes.ok) {
         const d = await verifyRes.json().catch(() => ({}))
-        throw new Error(d.error || '認証失敗')
+        throw new Error(d.error || 'Authentication failed')
       }
 
       onSuccess()
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : '不明なエラー'
+      const msg = e instanceof Error ? e.message : 'Unknown error'
       if (msg.includes('NotAllowedError') || msg.includes('cancelled')) {
-        setError('認証がキャンセルされました')
+        setError('Authentication was cancelled')
       } else {
         setError(msg)
       }
@@ -55,21 +55,21 @@ export function PasskeyChallenge({ acsTransId, onSuccess }: Props) {
   return (
     <div style={s.container}>
       <div style={s.icon}>🔑</div>
-      <h3 style={s.title}>パスキーで認証</h3>
+      <h3 style={s.title}>Authenticate with Passkey</h3>
       <p style={s.desc}>
-        お使いのデバイスの生体認証（Face ID / Touch ID / 指紋認証）で本人確認を行います。
+        Use your device biometrics (Face ID / Touch ID / fingerprint) to verify your identity.
       </p>
       {loading && (
         <div style={s.spinner}>
           <div style={s.dot} />
-          <p style={s.loadingText}>認証中...</p>
+          <p style={s.loadingText}>Authenticating...</p>
         </div>
       )}
       {error && (
         <div>
           <p style={s.error}>{error}</p>
           <button style={s.btn} onClick={triggerAuthentication}>
-            再試行
+            Retry
           </button>
         </div>
       )}

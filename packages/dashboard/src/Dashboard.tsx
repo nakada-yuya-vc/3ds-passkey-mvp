@@ -108,51 +108,51 @@ export function Dashboard() {
           <span style={s.logo}>🔐</span>
           <div>
             <div style={s.title}>3DS Passkey Admin</div>
-            <div style={s.subtitle}>最終更新: {lastRefresh.toLocaleTimeString('ja-JP')}</div>
+            <div style={s.subtitle}>Last updated: {lastRefresh.toLocaleTimeString('en-US')}</div>
           </div>
         </div>
-        <button style={s.refreshBtn} onClick={fetchAll}>↻ 更新</button>
+        <button style={s.refreshBtn} onClick={fetchAll}>↻ Refresh</button>
       </header>
 
       <main style={s.main}>
-        {loading && <p style={s.loadingText}>データ読み込み中...</p>}
+        {loading && <p style={s.loadingText}>Loading data...</p>}
 
         {metrics && (
           <>
             {/* KPI カード */}
             <div style={s.kpiGrid}>
               <KpiCard
-                label="総トランザクション"
+                label="Total Transactions"
                 value={metrics.totalTransactions.toLocaleString()}
                 icon="📊"
                 color="#667eea"
               />
               <KpiCard
-                label="frictionless 率"
+                label="Frictionless Rate"
                 value={pct(metrics.frictionlessRate)}
                 icon="⚡"
                 color="#48bb78"
               />
               <KpiCard
-                label="チャレンジ完了率"
+                label="Challenge Completion Rate"
                 value={pct(metrics.challengeCompletionRate)}
                 icon="✓"
                 color="#ed8936"
               />
               <KpiCard
-                label="Passkey 利用率"
+                label="Passkey Usage Rate"
                 value={pct(metrics.passkeyUsageRate)}
                 icon="🔑"
                 color="#9f7aea"
               />
               <KpiCard
-                label="Passkey 登録率"
+                label="Passkey Enrollment Rate"
                 value={pct(metrics.passkeyEnrollmentRate)}
                 icon="📱"
                 color="#38b2ac"
               />
               <KpiCard
-                label="OTP 平均認証時間"
+                label="OTP Avg. Auth Time"
                 value={ms(metrics.avgAuthTimeMs.otp)}
                 icon="⏱️"
                 color="#e53e3e"
@@ -163,7 +163,7 @@ export function Dashboard() {
             <div style={s.chartGrid}>
               {/* 認証タイプ円グラフ */}
               <div style={s.chartCard}>
-                <h3 style={s.chartTitle}>認証タイプ内訳</h3>
+                <h3 style={s.chartTitle}>Auth Type Breakdown</h3>
                 {pieData.length > 0 ? (
                   <ResponsiveContainer width="100%" height={240}>
                     <PieChart>
@@ -183,7 +183,7 @@ export function Dashboard() {
                           <Cell key={entry.name} fill={AUTH_COLORS[entry.name] || '#888'} />
                         ))}
                       </Pie>
-                      <Tooltip formatter={(v: number) => [v, '件数']} />
+                      <Tooltip formatter={(v: number) => [v, 'count']} />
                       <Legend />
                     </PieChart>
                   </ResponsiveContainer>
@@ -194,14 +194,14 @@ export function Dashboard() {
 
               {/* 平均認証時間棒グラフ */}
               <div style={s.chartCard}>
-                <h3 style={s.chartTitle}>平均認証時間（OTP vs Passkey）</h3>
+                <h3 style={s.chartTitle}>Avg. Auth Time (OTP vs Passkey)</h3>
                 {barData.some(b => b.ms > 0) ? (
                   <ResponsiveContainer width="100%" height={240}>
                     <BarChart data={barData} barSize={48}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
                       <XAxis dataKey="name" stroke="#94a3b8" />
                       <YAxis stroke="#94a3b8" tickFormatter={v => `${v}ms`} />
-                      <Tooltip formatter={(v: number) => [`${v} ms`, '平均時間']} />
+                      <Tooltip formatter={(v: number) => [`${v} ms`, 'avg time']} />
                       <Bar dataKey="ms" radius={[6, 6, 0, 0]}>
                         {barData.map(entry => (
                           <Cell key={entry.name} fill={entry.fill} />
@@ -216,7 +216,7 @@ export function Dashboard() {
 
               {/* frictionless 率時系列 */}
               <div style={{ ...s.chartCard, gridColumn: '1 / -1' }}>
-                <h3 style={s.chartTitle}>frictionless 率（時系列）</h3>
+                <h3 style={s.chartTitle}>Frictionless Rate (time series)</h3>
                 {timeseries.length > 0 ? (
                   <ResponsiveContainer width="100%" height={200}>
                     <LineChart data={timeseries}>
@@ -224,12 +224,12 @@ export function Dashboard() {
                       <XAxis
                         dataKey="time"
                         stroke="#94a3b8"
-                        tickFormatter={v => new Date(v).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })}
+                        tickFormatter={v => new Date(v).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
                       />
                       <YAxis stroke="#94a3b8" tickFormatter={v => `${(v * 100).toFixed(0)}%`} domain={[0, 1]} />
                       <Tooltip
-                        formatter={(v: number) => [`${(v * 100).toFixed(1)}%`, 'frictionless率']}
-                        labelFormatter={v => new Date(v).toLocaleString('ja-JP')}
+                        formatter={(v: number) => [`${(v * 100).toFixed(1)}%`, 'frictionless rate']}
+                        labelFormatter={v => new Date(v).toLocaleString('en-US')}
                       />
                       <Line
                         type="monotone"
@@ -250,15 +250,15 @@ export function Dashboard() {
 
         {/* トランザクション一覧 */}
         <div style={s.tableCard}>
-          <h3 style={s.chartTitle}>最新トランザクション</h3>
+          <h3 style={s.chartTitle}>Recent Transactions</h3>
           {transactions.length === 0 ? (
-            <EmptyState message="まだトランザクションがありません。加盟店ページから購入を試してください。" />
+            <EmptyState message="No transactions yet. Try making a purchase from the merchant page." />
           ) : (
             <div style={s.tableWrapper}>
               <table style={s.table}>
                 <thead>
                   <tr>
-                    {['時刻', '加盟店', '金額', '認証タイプ', '結果', '所要時間'].map(h => (
+                    {['Time', 'Merchant', 'Amount', 'Auth Type', 'Result', 'Duration'].map(h => (
                       <th key={h} style={s.th}>{h}</th>
                     ))}
                   </tr>
@@ -267,7 +267,7 @@ export function Dashboard() {
                   {transactions.map(tx => (
                     <tr key={tx.id} style={s.tr}>
                       <td style={s.td}>
-                        {new Date(tx.requestedAt).toLocaleTimeString('ja-JP')}
+                        {new Date(tx.requestedAt).toLocaleTimeString('en-US')}
                       </td>
                       <td style={s.td}>{tx.merchantName ?? '—'}</td>
                       <td style={s.td}>¥{tx.purchaseAmount.toLocaleString()}</td>
@@ -306,7 +306,7 @@ function KpiCard({ label, value, icon, color }: { label: string; value: string; 
   )
 }
 
-function EmptyState({ message = 'データなし' }: { message?: string }) {
+function EmptyState({ message = 'No data' }: { message?: string }) {
   return (
     <div style={s.emptyState}>
       <span style={s.emptyIcon}>📭</span>

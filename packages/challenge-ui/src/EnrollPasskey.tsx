@@ -18,7 +18,7 @@ export function EnrollPasskey({ acsTransId, onDone, onSkip }: Props) {
     try {
       // サーバーから登録オプションを取得
       const optRes = await fetch(`/webauthn/register/options?acsTransId=${acsTransId}`)
-      if (!optRes.ok) throw new Error('登録オプションの取得に失敗しました')
+      if (!optRes.ok) throw new Error('Failed to fetch registration options')
       const optionsJSON = await optRes.json()
 
       const credential = await startRegistration(optionsJSON)
@@ -31,14 +31,14 @@ export function EnrollPasskey({ acsTransId, onDone, onSkip }: Props) {
 
       if (!verifyRes.ok) {
         const d = await verifyRes.json().catch(() => ({}))
-        throw new Error(d.error || '登録失敗')
+        throw new Error(d.error || 'Registration failed')
       }
 
       onDone()
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : '不明なエラー'
+      const msg = e instanceof Error ? e.message : 'Unknown error'
       if (msg.includes('NotAllowedError') || msg.includes('cancelled')) {
-        setError('登録がキャンセルされました')
+        setError('Registration was cancelled')
       } else {
         setError(msg)
       }
@@ -49,14 +49,14 @@ export function EnrollPasskey({ acsTransId, onDone, onSkip }: Props) {
   return (
     <div style={s.container}>
       <div style={s.icon}>✨</div>
-      <h3 style={s.title}>次回からもっと簡単に</h3>
+      <h3 style={s.title}>Faster next time</h3>
       <p style={s.desc}>
-        パスキーを登録すると、次回から生体認証（Face ID / Touch ID）だけで
-        素早く本人確認ができます。
+        Register a passkey and verify your identity instantly with biometrics
+        (Face ID / Touch ID) on your next purchase.
       </p>
 
       <div style={s.benefits}>
-        {['SMSコード不要', 'より安全', 'より速い'].map(b => (
+        {['No SMS code needed', 'More secure', 'Faster'].map(b => (
           <div key={b} style={s.benefit}>
             <span style={s.check}>✓</span>
             <span>{b}</span>
@@ -71,11 +71,11 @@ export function EnrollPasskey({ acsTransId, onDone, onSkip }: Props) {
         onClick={handleEnroll}
         disabled={loading}
       >
-        {loading ? '登録中...' : 'パスキーを登録する'}
+        {loading ? 'Registering...' : 'Register Passkey'}
       </button>
 
       <button style={s.skip} onClick={onSkip} disabled={loading}>
-        今は登録しない
+        Not now
       </button>
     </div>
   )

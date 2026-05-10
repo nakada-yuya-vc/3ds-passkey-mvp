@@ -48,7 +48,7 @@ export function ChallengePage() {
         setPhase('done')
       }
     } catch (e) {
-      setError('トランザクション情報の取得に失敗しました')
+      setError('Failed to load transaction information')
       setPhase('error')
     }
   }
@@ -98,7 +98,7 @@ export function ChallengePage() {
   }
 
   if (phase === 'loading') {
-    return <Layout><p style={styles.loading}>読み込み中...</p></Layout>
+    return <Layout><p style={styles.loading}>Loading...</p></Layout>
   }
 
   if (phase === 'error') {
@@ -110,7 +110,7 @@ export function ChallengePage() {
       <Layout>
         <div style={styles.successBox}>
           <div style={styles.successIcon}>✓</div>
-          <p>認証が完了しました</p>
+          <p>Authentication complete</p>
         </div>
       </Layout>
     )
@@ -159,7 +159,7 @@ function Layout({
         <div style={s.header}>
           <div style={s.logo}>🔐</div>
           <div>
-            <div style={s.title}>本人確認</div>
+            <div style={s.title}>Identity Verification</div>
             {merchantName && (
               <div style={s.subtitle}>
                 {merchantName}

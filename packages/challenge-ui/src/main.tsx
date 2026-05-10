@@ -8,7 +8,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     <BrowserRouter>
       <Routes>
         <Route path="/challenge/:acsTransId" element={<ChallengePage />} />
-        <Route path="*" element={<div style={{ padding: 24 }}>チャレンジURLが必要です</div>} />
+        <Route path="*" element={<div style={{ padding: 24 }}>A challenge URL is required.</div>} />
       </Routes>
     </BrowserRouter>
   </React.StrictMode>

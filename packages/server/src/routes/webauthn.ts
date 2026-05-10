@@ -48,6 +48,7 @@ export async function webauthnRoutes(server: FastifyInstance) {
           residentKey: 'required',
           userVerification: 'required',
         },
+        extensions: { payment: { isPayment: true } },
       })
 
       challengeStore.set(`reg:${acsTransId}`, options.challenge)
@@ -93,6 +94,7 @@ export async function webauthnRoutes(server: FastifyInstance) {
       }
 
       const { credentialID, credentialPublicKey, counter } = verification.registrationInfo
+      server.log.info({ credentialID, spcCapable: !!(credential as { clientExtensionResults?: { payment?: unknown } }).clientExtensionResults?.payment }, 'registering credential')
 
       const spcCapable = !!(credential as { clientExtensionResults?: { payment?: unknown } })
         .clientExtensionResults?.payment
@@ -185,6 +187,7 @@ export async function webauthnRoutes(server: FastifyInstance) {
     }
 
     const credentialId = (credential as { id?: string }).id
+    server.log.info({ credentialId, storedIds: transaction.user.credentials.map(c => c.credentialId) }, 'credential lookup')
     const storedCred = transaction.user.credentials.find(c => c.credentialId === credentialId)
 
     if (!storedCred) {

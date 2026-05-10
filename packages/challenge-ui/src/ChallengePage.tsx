@@ -63,7 +63,8 @@ export function ChallengePage() {
             credentialIds: [new Uint8Array(32)],
             rpId: window.location.hostname,
             challenge: new Uint8Array(32),
-            instrument: { displayName: 'test', icon: 'https://example.com' },
+            payeeOrigin: window.location.origin,
+            instrument: { displayName: 'test', icon: `${window.location.origin}/favicon.ico` },
           },
         }],
         { total: { label: 'test', amount: { currency: 'JPY', value: '0' } } }

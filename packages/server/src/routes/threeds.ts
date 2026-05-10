@@ -79,8 +79,8 @@ export async function threedsRoutes(server: FastifyInstance) {
         // カードが常にOTPを要求（Passkey登録済みでも強制OTP）
         authType = 'OTP'
       } else if (hint === 'passkey') {
-        // カードが常にPasskeyを要求
-        authType = 'PASSKEY'
+        // Passkey登録済みならPasskey、未登録ならOTP（登録させる）
+        authType = hasPasskey ? 'PASSKEY' : 'OTP'
       } else {
         // auto: Passkey登録済みならPasskey、なければOTP
         authType = hasPasskey ? 'PASSKEY' : 'OTP'

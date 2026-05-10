@@ -6,6 +6,8 @@ A prototype implementation that replaces SMS OTP with Passkeys (WebAuthn/FIDO2) 
 
 ---
 
+![Demo](./demo-en.gif)
+
 ## Overview
 
 This MVP demonstrates replacing SMS one-time passwords with **device biometrics (Face ID / Touch ID / fingerprint)** for identity verification during the 3DS challenge step of credit card payments.

@@ -20,14 +20,6 @@ function base64urlToBuffer(base64url: string): Uint8Array {
 export function SpcChallenge({ acsTransId, credentials, merchantName, amount, onSuccess }: Props) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [started, setStarted] = useState(false)
-
-  useEffect(() => {
-    if (!started) {
-      setStarted(true)
-      triggerSPC()
-    }
-  }, [])
 
   async function triggerSPC() {
     setLoading(true)
@@ -81,7 +73,10 @@ export function SpcChallenge({ acsTransId, credentials, merchantName, amount, on
       await response.complete('success')
       onSuccess()
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : 'Unknown error'
+      const isNotAllowed = e instanceof DOMException && e.name === 'NotAllowedError'
+      const msg = isNotAllowed
+        ? 'No matching passkey found on this device. Please re-register your passkey.'
+        : (e instanceof Error ? e.message : 'Unknown error')
       setError(msg)
       setLoading(false)
     }
@@ -95,10 +90,14 @@ export function SpcChallenge({ acsTransId, credentials, merchantName, amount, on
         Approve your payment with Secure Payment Confirmation.
         <br />Use biometrics to confirm securely.
       </p>
-      {loading && (
+      {loading ? (
         <div style={s.spinner}>
           <p style={s.loadingText}>Check the browser authentication dialog...</p>
         </div>
+      ) : (
+        <button style={s.btn} onClick={triggerSPC} disabled={loading}>
+          Confirm Payment
+        </button>
       )}
       {error && (
         <div>

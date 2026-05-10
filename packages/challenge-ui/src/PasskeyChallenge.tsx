@@ -9,16 +9,13 @@ interface Props {
 export function PasskeyChallenge({ acsTransId, onSuccess }: Props) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [started, setStarted] = useState(false)
-
   useEffect(() => {
-    if (!started) {
-      setStarted(true)
-      triggerAuthentication()
-    }
+    let cancelled = false
+    triggerAuthentication(() => cancelled)
+    return () => { cancelled = true }
   }, [])
 
-  async function triggerAuthentication() {
+  async function triggerAuthentication(isCancelled?: () => boolean) {
     setLoading(true)
     setError(null)
 
@@ -27,7 +24,11 @@ export function PasskeyChallenge({ acsTransId, onSuccess }: Props) {
       if (!optRes.ok) throw new Error('Failed to fetch options')
       const options = await optRes.json()
 
+      if (isCancelled?.()) return
+
       const credential = await startAuthentication(options)
+
+      if (isCancelled?.()) return
 
       const verifyRes = await fetch('/webauthn/authenticate/verify', {
         method: 'POST',
@@ -42,9 +43,10 @@ export function PasskeyChallenge({ acsTransId, onSuccess }: Props) {
 
       onSuccess()
     } catch (e: unknown) {
+      const isNotAllowed = e instanceof DOMException && e.name === 'NotAllowedError'
       const msg = e instanceof Error ? e.message : 'Unknown error'
-      if (msg.includes('NotAllowedError') || msg.includes('cancelled')) {
-        setError('Authentication was cancelled')
+      if (isNotAllowed || msg.includes('cancelled')) {
+        setError('No matching passkey found on this device. Please re-register your passkey.')
       } else {
         setError(msg)
       }

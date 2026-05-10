@@ -52,7 +52,10 @@ export function EnrollPasskey({ acsTransId, onDone, onSkip }: Props) {
       <h3 style={s.title}>Faster next time</h3>
       <p style={s.desc}>
         Register a passkey and verify your identity instantly with biometrics
-        (Face ID / Touch ID) on your next purchase.
+        on your next purchase.
+      </p>
+      <p style={s.hint}>
+        💡 When asked where to save, choose <strong>Chrome</strong> or <strong>Edge</strong> (not "Windows Hello" / "Windows security key") to enable payment confirmation.
       </p>
 
       <div style={s.benefits}>
@@ -85,7 +88,8 @@ const s: Record<string, React.CSSProperties> = {
   container: { textAlign: 'center' },
   icon: { fontSize: 48, marginBottom: 12 },
   title: { fontSize: 18, fontWeight: 700, marginBottom: 8, color: '#333' },
-  desc: { fontSize: 14, color: '#666', lineHeight: 1.6, marginBottom: 16 },
+  desc: { fontSize: 14, color: '#666', lineHeight: 1.6, marginBottom: 10 },
+  hint: { fontSize: 12, color: '#888', lineHeight: 1.5, marginBottom: 16, background: '#f7f8fa', borderRadius: 6, padding: '8px 10px', textAlign: 'left' as const },
   benefits: { display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 20, textAlign: 'left' },
   benefit: { display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, color: '#444' },
   check: { color: '#48bb78', fontWeight: 700, fontSize: 16 },

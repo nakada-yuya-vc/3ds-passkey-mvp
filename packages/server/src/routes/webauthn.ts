@@ -48,7 +48,6 @@ export async function webauthnRoutes(server: FastifyInstance) {
           residentKey: 'required',
           userVerification: 'required',
         },
-        extensions: { payment: { isPayment: true } },
       })
 
       challengeStore.set(`reg:${acsTransId}`, options.challenge)

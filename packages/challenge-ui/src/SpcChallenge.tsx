@@ -40,9 +40,9 @@ export function SpcChallenge({ acsTransId, credentials, merchantName, amount, on
             credentialIds,
             challenge: base64urlToBuffer(opts.challenge),
             rpId: opts.rpId,
-            payeeOrigin: window.location.origin,
+            payeeOrigin: opts.payeeOrigin,
             instrument: {
-              displayName: merchantName,
+              displayName: opts.merchantName ?? merchantName,
               icon: `${window.location.origin}/favicon.ico`,
             },
             timeout: 60000,
@@ -50,8 +50,8 @@ export function SpcChallenge({ acsTransId, credentials, merchantName, amount, on
         }],
         {
           total: {
-            label: merchantName,
-            amount: { currency: 'JPY', value: String(Math.floor(amount / 100)) },
+            label: opts.merchantName ?? merchantName,
+            amount: { currency: 'JPY', value: String(amount) },
           },
         }
       )

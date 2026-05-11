@@ -33,9 +33,12 @@ export async function spcRoutes(server: FastifyInstance) {
       const challenge = randomBytes(32).toString('base64url')
       challengeStore.set(`spc:${acsTransId}`, challenge)
 
+      const merchantOrigin = process.env.MERCHANT_ORIGIN || 'http://localhost:3002'
+
       return {
         challenge,
         rpId: rpID,
+        payeeOrigin: merchantOrigin,
         credentials: spcCredentials.map(c => ({
           credentialId: c.credentialId,
           spcCapable: c.spcCapable,

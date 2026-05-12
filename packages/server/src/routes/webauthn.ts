@@ -44,10 +44,13 @@ export async function webauthnRoutes(server: FastifyInstance) {
           transports: c.transports as AuthenticatorTransportFuture[],
         })),
         authenticatorSelection: {
-          authenticatorAttachment: 'platform', // Windows Hello / Touch ID に強制
+          authenticatorAttachment: 'platform',
           residentKey: 'required',
           userVerification: 'required',
         },
+        extensions: {
+          payment: { isPaymentCredential: true },
+        } as Record<string, unknown>,
       })
 
       challengeStore.set(`reg:${acsTransId}`, options.challenge)
@@ -93,10 +96,11 @@ export async function webauthnRoutes(server: FastifyInstance) {
       }
 
       const { credentialID, credentialPublicKey, counter } = verification.registrationInfo
-      server.log.info({ credentialID, spcCapable: !!(credential as { clientExtensionResults?: { payment?: unknown } }).clientExtensionResults?.payment }, 'registering credential')
 
-      const spcCapable = !!(credential as { clientExtensionResults?: { payment?: unknown } })
-        .clientExtensionResults?.payment
+      // payment extension は登録時に clientExtensionResults へ出力されない (入力専用)。
+      // 登録オプションに常に payment extension を含めているため spcCapable は常に true。
+      const spcCapable = true
+      server.log.info({ credentialID, spcCapable }, 'registering credential')
 
       await prisma.webAuthnCredential.create({
         data: {
@@ -109,6 +113,7 @@ export async function webauthnRoutes(server: FastifyInstance) {
           spcCapable,
         },
       })
+      server.log.info({ acsTransId, credentialID, spcCapable }, '[register] passkey enrolled')
 
       challengeStore.delete(`reg:${acsTransId}`)
 
@@ -227,6 +232,7 @@ export async function webauthnRoutes(server: FastifyInstance) {
         data: { authResult: 'AUTHENTICATED', authenticatedAt: new Date() },
       })
 
+      server.log.info({ acsTransId, credentialId }, '[webauthn] authenticated')
       return { success: true }
     } catch (err) {
       server.log.error(err)

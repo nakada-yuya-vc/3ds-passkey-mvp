@@ -24,9 +24,9 @@ export async function spcRoutes(server: FastifyInstance) {
         return reply.code(404).send({ error: 'Transaction not found' })
       }
 
-      const spcCredentials = transaction.user.credentials.filter(c => c.spcCapable)
+      const spcCredentials = transaction.user.credentials
       if (spcCredentials.length === 0) {
-        return reply.code(400).send({ error: 'No SPC-capable credentials' })
+        return reply.code(400).send({ error: 'No credentials found' })
       }
 
       const { randomBytes } = await import('crypto')
@@ -34,11 +34,12 @@ export async function spcRoutes(server: FastifyInstance) {
       challengeStore.set(`spc:${acsTransId}`, challenge)
 
       const merchantOrigin = process.env.MERCHANT_ORIGIN || 'http://localhost:3002'
+      const payeeOrigin = merchantOrigin.replace(/^http:\/\//, 'https://')
 
       return {
         challenge,
         rpId: rpID,
-        payeeOrigin: merchantOrigin,
+        payeeOrigin,
         credentials: spcCredentials.map(c => ({
           credentialId: c.credentialId,
           spcCapable: c.spcCapable,
@@ -76,11 +77,11 @@ export async function spcRoutes(server: FastifyInstance) {
 
     const credentialId = (assertion as { id?: string }).id
     const storedCred = transaction.user.credentials.find(
-      c => c.credentialId === credentialId && c.spcCapable
+      c => c.credentialId === credentialId
     )
 
     if (!storedCred) {
-      return reply.code(400).send({ error: 'SPC credential not found' })
+      return reply.code(400).send({ error: 'Credential not found' })
     }
 
     try {
@@ -121,6 +122,7 @@ export async function spcRoutes(server: FastifyInstance) {
         },
       })
 
+      server.log.info({ acsTransId, credentialId }, '[spc] authenticated')
       return { success: true }
     } catch (err) {
       server.log.error(err)

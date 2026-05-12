@@ -70,7 +70,7 @@ export function PasskeyChallenge({ acsTransId, onSuccess }: Props) {
       {error && (
         <div>
           <p style={s.error}>{error}</p>
-          <button style={s.btn} onClick={triggerAuthentication}>
+          <button style={s.btn} onClick={() => triggerAuthentication()}>
             Retry
           </button>
         </div>

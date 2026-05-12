@@ -79,7 +79,8 @@ export function EnrollPasskey({ acsTransId, onDone, onSkip }: Props) {
         on your next purchase.
       </p>
       <p style={s.hint}>
-        💡 When asked where to save, choose <strong>Chrome</strong> or <strong>Edge</strong> (not "Windows Hello" / "Windows security key") to enable payment confirmation.
+        💡 The passkey will be bound to this device (e.g. Windows Hello / Touch ID) so it can
+        be used for Secure Payment Confirmation. It will not sync to other devices.
       </p>
 
       <div style={s.benefits}>

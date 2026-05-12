@@ -33,8 +33,22 @@ export async function spcRoutes(server: FastifyInstance) {
       const challenge = randomBytes(32).toString('base64url')
       challengeStore.set(`spc:${acsTransId}`, challenge)
 
-      const merchantOrigin = process.env.MERCHANT_ORIGIN || 'http://localhost:3002'
+      // .env historically uses MERCHANT_URL; accept either name. SPC requires payeeOrigin to be HTTPS,
+      // so we coerce http:// to https:// (Chrome only displays this string; it doesn't fetch it).
+      const merchantOrigin =
+        process.env.MERCHANT_ORIGIN || process.env.MERCHANT_URL || 'http://localhost:3002'
       const payeeOrigin = merchantOrigin.replace(/^http:\/\//, 'https://')
+
+      server.log.info(
+        {
+          acsTransId,
+          rpID,
+          payeeOrigin,
+          credentialCount: spcCredentials.length,
+          aaguids: spcCredentials.map(c => c.aaguid),
+        },
+        '[spc] options issued'
+      )
 
       return {
         challenge,
@@ -85,11 +99,15 @@ export async function spcRoutes(server: FastifyInstance) {
     }
 
     try {
+      // SPC assertions set clientDataJSON.type to "payment.get" (not "webauthn.get").
+      // @simplewebauthn/server rejects unknown types by default, so explicitly allow it.
+      // Signature/challenge/RPID verification otherwise follows the standard WebAuthn rules.
       const verification = await verifyAuthenticationResponse({
         response: assertion as unknown as Parameters<typeof verifyAuthenticationResponse>[0]['response'],
         expectedChallenge,
         expectedOrigin: rpOrigin,
         expectedRPID: rpID,
+        expectedType: 'payment.get',
         requireUserVerification: true,
         authenticator: {
           credentialID: storedCred.credentialId,

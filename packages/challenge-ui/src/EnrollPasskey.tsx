@@ -11,6 +11,30 @@ export function EnrollPasskey({ acsTransId, onDone, onSkip }: Props) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  const webAuthnAvailable = typeof window !== 'undefined'
+    && window.isSecureContext
+    && typeof window.PublicKeyCredential === 'function'
+
+  if (!webAuthnAvailable) {
+    return (
+      <div style={s.container}>
+        <div style={s.icon}>ℹ️</div>
+        <h3 style={s.title}>Passkey registration unavailable here</h3>
+        <p style={s.desc}>
+          This page is not running in a secure context (HTTPS or localhost), so a passkey
+          cannot be registered on this device right now. You can complete this purchase
+          and register a passkey later from a secure URL.
+        </p>
+        <p style={s.hint}>
+          Current origin: <code>{typeof window !== 'undefined' ? window.location.origin : ''}</code>
+        </p>
+        <button style={s.btn} onClick={onSkip}>
+          Continue
+        </button>
+      </div>
+    )
+  }
+
   async function handleEnroll() {
     setLoading(true)
     setError(null)

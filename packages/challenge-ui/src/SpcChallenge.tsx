@@ -26,6 +26,16 @@ export function SpcChallenge({ acsTransId, credentials, merchantName, amount, on
     setError(null)
 
     try {
+      console.log('[spc] env check: isSecureContext=%s, PaymentRequest=%s, hostname=%s',
+        window.isSecureContext,
+        typeof PaymentRequest,
+        window.location.hostname,
+      )
+
+      if (typeof PaymentRequest === 'undefined') {
+        throw new Error('PaymentRequest API is not available in this browser. Requires Chrome on Windows/Android or Edge on Windows over HTTPS (or localhost).')
+      }
+
       const optRes = await fetch(`/spc/options?acsTransId=${acsTransId}`)
       if (!optRes.ok) throw new Error('Failed to fetch SPC options')
       const opts = await optRes.json()
@@ -33,7 +43,7 @@ export function SpcChallenge({ acsTransId, credentials, merchantName, amount, on
       const credentialIds = credentials.map(c => base64urlToBuffer(c.credentialId))
       console.log('[spc] opts', JSON.stringify(opts))
       console.log('[spc] credential ids (base64url)', credentials.map(c => c.credentialId))
-      console.log('[spc] rpId=%s payeeOrigin=%s', opts.rpId, opts.payeeOrigin)
+      console.log('[spc] rpId=%s payeeOrigin=%s callerOrigin=%s', opts.rpId, opts.payeeOrigin, window.location.origin)
 
       const request = new PaymentRequest(
         [{
@@ -57,6 +67,18 @@ export function SpcChallenge({ acsTransId, credentials, merchantName, amount, on
           },
         }
       )
+
+      // Diagnostic: log whether Chrome considers the credential eligible.
+      // NOTE: a `true` here does NOT guarantee show() will succeed — Chrome treats synced
+      // passkeys as candidates regardless of the `payment` extension, but the SPC ceremony
+      // at show() time still requires the credential to have been registered with the
+      // correct extension (`payment: { isPayment: true }`).
+      try {
+        const canPay = await request.canMakePayment()
+        console.log('[spc] canMakePayment=%s', canPay)
+      } catch (probeErr) {
+        console.warn('[spc] canMakePayment probe threw', probeErr)
+      }
 
       const response = await request.show()
       const assertion = response.details

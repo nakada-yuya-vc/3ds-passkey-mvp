@@ -122,6 +122,41 @@ export async function threedsRoutes(server: FastifyInstance) {
     }
   })
 
+  // POST /threeds/fallback/otp - SPC 失敗時に OTP へフォールバック
+  server.post<{
+    Body: {
+      acsTransID: string
+      reason?: string
+    }
+  }>('/fallback/otp', async (request, reply) => {
+    const { acsTransID, reason } = request.body
+
+    const transaction = await prisma.transaction.findUnique({
+      where: { acsTransId: acsTransID },
+    })
+
+    if (!transaction) {
+      return reply.code(404).send({ error: 'Transaction not found' })
+    }
+
+    if (transaction.authResult === 'AUTHENTICATED') {
+      return reply.code(409).send({ error: 'Transaction already authenticated' })
+    }
+
+    await generateOtp(acsTransID)
+    await prisma.transaction.update({
+      where: { acsTransId: acsTransID },
+      data: {
+        authType: 'OTP',
+        authResult: 'ATTEMPTED',
+        challengeStartedAt: transaction.challengeStartedAt ?? new Date(),
+      },
+    })
+
+    server.log.info({ acsTransID, previousAuthType: transaction.authType, reason }, '[fallback] OTP issued')
+    return { status: 'otp_required' }
+  })
+
   // POST /threeds/creq - OTP検証
   server.post<{
     Body: {
@@ -151,7 +186,11 @@ export async function threedsRoutes(server: FastifyInstance) {
 
     await prisma.transaction.update({
       where: { acsTransId: acsTransID },
-      data: { otpCompletedAt: new Date() },
+      data: {
+        authResult: 'AUTHENTICATED',
+        otpCompletedAt: new Date(),
+        authenticatedAt: new Date(),
+      },
     })
 
     server.log.info({ acsTransID }, '[creq] OTP verified')

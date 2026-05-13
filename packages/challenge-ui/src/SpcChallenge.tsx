@@ -6,6 +6,7 @@ interface Props {
   merchantName: string
   amount: number
   onSuccess: () => void
+  onFallback: () => void
 }
 
 function base64urlToBuffer(base64url: string): Uint8Array {
@@ -17,7 +18,7 @@ function base64urlToBuffer(base64url: string): Uint8Array {
   return bytes
 }
 
-export function SpcChallenge({ acsTransId, credentials, merchantName, amount, onSuccess }: Props) {
+export function SpcChallenge({ acsTransId, credentials, merchantName, amount, onSuccess, onFallback }: Props) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -128,6 +129,7 @@ export function SpcChallenge({ acsTransId, credentials, merchantName, amount, on
         <div>
           <p style={s.error}>{error}</p>
           <button style={s.btn} onClick={triggerSPC}>Retry</button>
+          <button style={s.secondaryBtn} onClick={onFallback}>Use OTP instead</button>
         </div>
       )}
     </div>
@@ -150,6 +152,18 @@ const s: Record<string, React.CSSProperties> = {
     border: 'none',
     borderRadius: 8,
     fontSize: 16,
+    fontWeight: 600,
+    cursor: 'pointer',
+  },
+  secondaryBtn: {
+    width: '100%',
+    padding: '12px',
+    marginTop: 10,
+    background: 'transparent',
+    color: '#667eea',
+    border: '1px solid #cbd5e1',
+    borderRadius: 8,
+    fontSize: 14,
     fontWeight: 600,
     cursor: 'pointer',
   },

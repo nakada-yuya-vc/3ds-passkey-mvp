@@ -153,12 +153,17 @@ model Transaction {
   // タイミング
   requestedAt           DateTime @default(now())
   challengeStartedAt    DateTime?
+  otpCompletedAt        DateTime?
   authenticatedAt       DateTime?
+
+  enrolledPasskey       Boolean @default(false)
 
   // RBA シグナル
   deviceKnown           Boolean?
   deviceHash            String?
   ipAddress             String?
+
+  challenges            ChallengeSession[]
 }
 
 enum AuthType {
@@ -172,6 +177,33 @@ enum AuthResult {
   AUTHENTICATED
   NOT_AUTHENTICATED
   ATTEMPTED
+}
+
+enum ChallengePurpose {
+  WEBAUTHN_REGISTER
+  WEBAUTHN_AUTHENTICATE
+  SPC_AUTHENTICATE
+}
+
+model ChallengeSession {
+  id            String           @id @default(uuid())
+  acsTransId    String
+  purpose       ChallengePurpose
+  challenge     String           @unique
+
+  rpId          String
+  origin        String?
+  credentialId  String?
+
+  expiresAt     DateTime
+  consumedAt    DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  transaction   Transaction @relation(fields: [acsTransId], references: [acsTransId], onDelete: Cascade)
+
+  @@index([acsTransId, purpose, consumedAt])
+  @@index([expiresAt])
 }
 
 model DeviceFingerprint {
@@ -250,11 +282,12 @@ Challenge UI: ブラウザを判定
   │     → SpcChallenge.tsx: PaymentRequest API 起動
   │       → POST /spc/verify { assertion }
   │
-  └── SPC 非対応 (Safari 等)
-        → PasskeyChallenge.tsx: navigator.credentials.get() 起動
-          → POST /webauthn/authenticate/verify { assertion }
+  └── SPC 非対応 / SPC 失敗
+        → POST /threeds/fallback/otp
+        → OtpChallenge.tsx: OTP 入力画面を表示
+          → POST /threeds/creq { otpCode }
 
-ACS: assertion 検証・signCount 更新
+ACS: assertion 検証・signCount 更新、または OTP 検証
   → RReq 送信 → Merchant: 認証完了
 ```
 
@@ -295,6 +328,15 @@ POST /threeds/creq
   Response: {
     status: "otp_verified" | "show_enroll"
     enrollOptions?: RegistrationOptions
+  }
+
+POST /threeds/fallback/otp
+  Body: {
+    acsTransID: string
+    reason?: string
+  }
+  Response: {
+    status: "otp_required"
   }
 ```
 
@@ -408,7 +450,7 @@ function evaluate(input: RBAInput): RBAResult {
 ## Challenge UI: ブラウザ分岐ロジック
 
 ```typescript
-// PasskeyChallenge.tsx または SpcChallenge.tsx への分岐
+// PasskeyChallenge.tsx / SpcChallenge.tsx / OTP fallback への分岐
 
 async function detectAndChallenge(acsTransId: string) {
   // 1. SPC 対応チェック
@@ -424,8 +466,9 @@ async function detectAndChallenge(acsTransId: string) {
     return <SpcChallenge acsTransId={acsTransId} />
   }
 
-  // 3. SPC 非対応（Safari 等）→ ACS チャレンジ内 WebAuthn
-  return <PasskeyChallenge acsTransId={acsTransId} />
+  // 3. SPC 非対応または SPC 失敗 → OTP fallback
+  await fetch('/threeds/fallback/otp', { method: 'POST', body: JSON.stringify({ acsTransID: acsTransId }) })
+  return <OtpChallenge acsTransId={acsTransId} />
 }
 ```
 

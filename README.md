@@ -155,10 +155,13 @@ ACS_URL=http://localhost:3004
 MERCHANT_URL=http://localhost:3002
 OTP_MOCK=true
 JWT_SECRET=change_me_in_production
+PAN_PEPPER=dev_only_pepper_replace_in_production_xxxxxxxxxxxxxxxxxxxx
+# SPC_PAYEE_ORIGIN=https://merchant.example.com
 ```
 
 > **`OTP_MOCK=true`** fixes the OTP code to `123456` for development.
-> **`MERCHANT_URL`** is used to build the SPC `payeeOrigin` (the `http://` is rewritten to `https://` before being signed into the credential's clientDataJSON).
+> **`MERCHANT_URL`** is used to build the SPC `payeeOrigin`. In dev (http) the server coerces it to `https://` and logs a warning; for any non-dev environment set **`SPC_PAYEE_ORIGIN`** explicitly to a real `https://` origin.
+> **`PAN_PEPPER`** is the HMAC key used to derive the user join key from the PAN. PAN space is small enough to brute-force a plain SHA-256, so we HMAC it. The dev value here is fine for local testing; in production load this from KMS / Secrets Manager and never commit it. Must be at least 32 chars.
 
 ### 4. Start the Database and Apply Schema
 
@@ -364,6 +367,12 @@ lsof -ti:3001 | xargs kill
 ```
 
 ---
+
+## Known gaps
+
+See [BACKLOG.md](./BACKLOG.md) for the items deliberately deferred (BBK
+support, attestation verification, line items, conformance tests, etc.) and
+the W3C SPC issues each one tracks.
 
 ## License
 

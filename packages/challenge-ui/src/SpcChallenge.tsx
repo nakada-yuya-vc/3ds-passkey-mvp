@@ -64,7 +64,11 @@ export function SpcChallenge({ acsTransId, credentials, merchantName, amount, on
         {
           total: {
             label: opts.merchantName ?? merchantName,
-            amount: { currency: 'JPY', value: String(amount) },
+            // `opts.total` is pre-formatted on the server for the currency's minor-unit
+            // exponent (e.g. JPY "24800", USD "248.00"). Pass it through as-is; any
+            // client-side re-formatting will desync from the /spc/verify dynamic-linking
+            // check and produce a confusing 401.
+            amount: opts.total,
           },
         }
       )

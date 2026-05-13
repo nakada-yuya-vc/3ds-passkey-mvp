@@ -26,7 +26,7 @@ export async function threedsRoutes(server: FastifyInstance) {
       }
     }
   }>('/areq', async (request, reply) => {
-    const { createHash } = await import('crypto')
+    const { createHmac } = await import('crypto')
     const {
       threeDSServerTransID,
       cardNumber,
@@ -38,7 +38,15 @@ export async function threedsRoutes(server: FastifyInstance) {
       authFlow = 'webauthn',
     } = request.body
 
-    const cardNumberHash = createHash('sha256').update(cardNumber).digest('hex')
+    // PAN space is small enough (BIN + Luhn ≪ 10^10) to brute-force a plain SHA-256.
+    // Use HMAC with a server-side pepper so the join key isn't reversible from a DB leak.
+    // In production the pepper should be backed by KMS / Secrets Manager — never the env.
+    const pepper = process.env.PAN_PEPPER
+    if (!pepper || pepper.length < 32) {
+      server.log.error('[areq] PAN_PEPPER unset or too short (>=32 chars required)')
+      return reply.code(500).send({ error: 'Server misconfigured: PAN_PEPPER' })
+    }
+    const cardNumberHash = createHmac('sha256', pepper).update(cardNumber).digest('hex')
     const ipAddress = request.ip || '127.0.0.1'
     const deviceHash = Buffer.from(
       `${browserInfo.userAgent}|${browserInfo.screenWidth}x${browserInfo.screenHeight}`
@@ -163,7 +171,9 @@ export async function threedsRoutes(server: FastifyInstance) {
       acsTransID: string
       otpCode?: string
     }
-  }>('/creq', async (request, reply) => {
+  }>('/creq', {
+    config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
+  }, async (request, reply) => {
     const { acsTransID, otpCode } = request.body
 
     const transaction = await prisma.transaction.findUnique({

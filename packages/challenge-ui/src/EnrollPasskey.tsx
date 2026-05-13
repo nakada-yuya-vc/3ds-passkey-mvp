@@ -11,6 +11,30 @@ export function EnrollPasskey({ acsTransId, onDone, onSkip }: Props) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  const webAuthnAvailable = typeof window !== 'undefined'
+    && window.isSecureContext
+    && typeof window.PublicKeyCredential === 'function'
+
+  if (!webAuthnAvailable) {
+    return (
+      <div style={s.container}>
+        <div style={s.icon}>ℹ️</div>
+        <h3 style={s.title}>Passkey registration unavailable here</h3>
+        <p style={s.desc}>
+          This page is not running in a secure context (HTTPS or localhost), so a passkey
+          cannot be registered on this device right now. You can complete this purchase
+          and register a passkey later from a secure URL.
+        </p>
+        <p style={s.hint}>
+          Current origin: <code>{typeof window !== 'undefined' ? window.location.origin : ''}</code>
+        </p>
+        <button style={s.btn} onClick={onSkip}>
+          Continue
+        </button>
+      </div>
+    )
+  }
+
   async function handleEnroll() {
     setLoading(true)
     setError(null)
@@ -55,7 +79,8 @@ export function EnrollPasskey({ acsTransId, onDone, onSkip }: Props) {
         on your next purchase.
       </p>
       <p style={s.hint}>
-        💡 When asked where to save, choose <strong>Chrome</strong> or <strong>Edge</strong> (not "Windows Hello" / "Windows security key") to enable payment confirmation.
+        💡 The passkey will be bound to this device (e.g. Windows Hello / Touch ID) so it can
+        be used for Secure Payment Confirmation. It will not sync to other devices.
       </p>
 
       <div style={s.benefits}>

@@ -34,37 +34,65 @@ export function ChallengePage() {
       const info: TransactionInfo = await res.json()
       setTxInfo(info)
 
+      const secure = window.isSecureContext
+      const webAuthnSupported = typeof window.PublicKeyCredential === 'function'
+      console.log('[challenge] env: isSecureContext=%s webAuthn=%s host=%s authType=%s',
+        secure, webAuthnSupported, window.location.host, info.authType)
+
       if (info.authType === 'OTP') {
+        console.log('[challenge] phase=otp')
         setPhase('otp')
       } else if (info.authType === 'PASSKEY' || info.authType === 'PASSKEY_SPC') {
-        const hasSpc = info.credentials.some(c => c.spcCapable)
-        const spcAvailable = await checkSpcAvailability()
-        if (hasSpc && spcAvailable) {
+        // WebAuthn / SPC both require a secure context (HTTPS or localhost).
+        // On Android over Wi-Fi this is typically http://192.168.x.x which is NOT secure,
+        // so neither API is available. Surface that clearly instead of letting the inner
+        // components throw an opaque "not supported" error.
+        if (!secure || !webAuthnSupported) {
+          console.warn('[challenge] passkey flow but insecure context — cannot proceed')
+          setError(
+            `This page must be served over HTTPS (or accessed via "localhost") to use passkey authentication. ` +
+            `Current origin: ${window.location.origin}. ` +
+            `Tip: use a tunnel like ngrok, or enable HTTPS on the Vite dev server (e.g. with vite-plugin-mkcert).`
+          )
+          setPhase('error')
+          return
+        }
+
+        if (info.authType === 'PASSKEY_SPC') {
+          // Probe canMakePayment for diagnostics only — do NOT fall back to plain WebAuthn.
+          // EMVCo certification treats SPC as a distinct authentication method; silently
+          // degrading to a non-SPC passkey would mask the real failure.
+          const spcAvailable = info.credentials.length > 0
+            && await checkSpcAvailability(info.credentials.map(c => c.credentialId))
+          console.log('[challenge] authType=PASSKEY_SPC spcAvailable=%s (diagnostic only, no fallback)', spcAvailable)
           setPhase('spc')
         } else {
+          console.log('[challenge] authType=PASSKEY phase=passkey')
           setPhase('passkey')
         }
       } else {
         setPhase('done')
       }
     } catch (e) {
+      console.error('[challenge] loadTransactionInfo error', e)
       setError('Failed to load transaction information')
       setPhase('error')
     }
   }
 
-  async function checkSpcAvailability(): Promise<boolean> {
+  async function checkSpcAvailability(credentialIds: string[]): Promise<boolean> {
     try {
       if (typeof PaymentRequest === 'undefined') return false
+      const ids = credentialIds.map(id => base64urlToBuffer(id))
       const pr = new PaymentRequest(
         [{
           supportedMethods: 'secure-payment-confirmation',
           data: {
-            credentialIds: [new Uint8Array(32)],
+            credentialIds: ids,
             rpId: window.location.hostname,
             challenge: new Uint8Array(32),
-            payeeOrigin: window.location.origin,
-            instrument: { displayName: 'test', icon: `${window.location.origin}/favicon.ico` },
+            payeeOrigin: window.location.origin.replace(/^http:\/\//, 'https://'),
+            instrument: { displayName: 'test', icon: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==' },
           },
         }],
         { total: { label: 'test', amount: { currency: 'JPY', value: '0' } } }
@@ -75,27 +103,46 @@ export function ChallengePage() {
     }
   }
 
+  function base64urlToBuffer(base64url: string): Uint8Array {
+    const base64 = base64url.replace(/-/g, '+').replace(/_/g, '/')
+    const padded = base64.padEnd(base64.length + ((4 - base64.length % 4) % 4), '=')
+    const binary = atob(padded)
+    const bytes = new Uint8Array(binary.length)
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+    return bytes
+  }
+
   function handleOtpSuccess() {
     setPhase('enroll')
   }
 
   function handleEnrollDone() {
+    console.log('[challenge] result: OTP + Passkey registered')
     setPhase('done')
-    notifyParent('authenticated')
+    notifyParent('authenticated', 'OTP + Passkey registered')
   }
 
   function handleEnrollSkip() {
+    console.log('[challenge] result: OTP')
     setPhase('done')
-    notifyParent('authenticated')
+    notifyParent('authenticated', 'OTP')
   }
 
   function handlePasskeySuccess() {
+    console.log('[challenge] result: WebAuthn')
     setPhase('done')
-    notifyParent('authenticated')
+    notifyParent('authenticated', 'WebAuthn')
   }
 
-  function notifyParent(result: string) {
-    window.parent.postMessage({ type: '3ds-challenge-complete', result, acsTransId }, '*')
+  function handleSpcSuccess() {
+    console.log('[challenge] result: SPC')
+    setPhase('done')
+    notifyParent('authenticated', 'SPC')
+  }
+
+
+  function notifyParent(result: string, method: string) {
+    window.parent.postMessage({ type: '3ds-challenge-complete', result, acsTransId, method }, '*')
   }
 
   if (phase === 'loading') {
@@ -103,7 +150,7 @@ export function ChallengePage() {
   }
 
   if (phase === 'error') {
-    return <Layout><p style={styles.error}>{error}</p></Layout>
+    return <Layout><p style={styles.errorMsg}>{error}</p></Layout>
   }
 
   if (phase === 'done') {
@@ -138,7 +185,7 @@ export function ChallengePage() {
           credentials={txInfo.credentials}
           merchantName={txInfo.merchantName ?? ''}
           amount={txInfo.purchaseAmount}
-          onSuccess={handlePasskeySuccess}
+          onSuccess={handleSpcSuccess}
         />
       )}
     </Layout>
@@ -177,7 +224,7 @@ function Layout({
 
 const styles: Record<string, React.CSSProperties> = {
   loading: { textAlign: 'center', color: '#888', padding: 24 },
-  error: { color: '#e53e3e', textAlign: 'center', padding: 24 },
+  errorMsg: { color: '#e53e3e', padding: 24, lineHeight: 1.6, fontSize: 13, wordBreak: 'break-word' },
   successBox: { textAlign: 'center', padding: 16 },
   successIcon: {
     fontSize: 40,

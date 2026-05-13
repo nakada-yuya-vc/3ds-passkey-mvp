@@ -1,28 +1,23 @@
 import { FastifyInstance } from 'fastify'
 import { v4 as uuidv4 } from 'uuid'
 import { prisma } from '../prisma'
-import { evaluateRBA, updateDeviceHistory } from '../services/rba'
+import { updateDeviceHistory } from '../services/rba'
 import { generateOtp, verifyOtp } from '../services/otp'
 
-// テスト用カード番号→ハッシュマッピング（固定値）
-const TEST_CARD_HASHES: Record<string, string> = {
-  '4111111111111111': 'a0e0f5a2a3e4f6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1',
-  '4111111111111129': 'b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2',
-  '4111111111111137': 'c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3',
-  '4111111111111145': 'd3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4',
-}
+type AuthFlow = 'frictionless' | 'otp' | 'webauthn' | 'spc'
 
 export async function threedsRoutes(server: FastifyInstance) {
   // POST /threeds/areq
   server.post<{
     Body: {
       threeDSServerTransID: string
-      cardNumberHash: string
+      cardNumber: string
       merchantID: string
       merchantName: string
       purchaseAmount: number
       purchaseCurrency: string
       deviceChannel: string
+      authFlow?: AuthFlow
       browserInfo: {
         userAgent: string
         language: string
@@ -31,28 +26,23 @@ export async function threedsRoutes(server: FastifyInstance) {
       }
     }
   }>('/areq', async (request, reply) => {
+    const { createHash } = await import('crypto')
     const {
       threeDSServerTransID,
-      cardNumberHash,
+      cardNumber,
       merchantID,
       merchantName,
       purchaseAmount,
       purchaseCurrency,
       browserInfo,
+      authFlow = 'webauthn',
     } = request.body
 
+    const cardNumberHash = createHash('sha256').update(cardNumber).digest('hex')
     const ipAddress = request.ip || '127.0.0.1'
     const deviceHash = Buffer.from(
       `${browserInfo.userAgent}|${browserInfo.screenWidth}x${browserInfo.screenHeight}`
     ).toString('base64').slice(0, 32)
-
-    const rbaResult = await evaluateRBA({
-      cardNumberHash,
-      merchantId: merchantID,
-      purchaseAmount,
-      deviceHash,
-      ipAddress,
-    })
 
     // ユーザー取得または作成
     let user = await prisma.user.findUnique({ where: { cardNumberHash } })
@@ -60,32 +50,30 @@ export async function threedsRoutes(server: FastifyInstance) {
       user = await prisma.user.create({ data: { cardNumberHash } })
     }
 
-    if (rbaResult.deviceKnown) {
-      await updateDeviceHistory(user.id, deviceHash)
-    }
+    // デバイス履歴を更新（メトリクス用）
+    await updateDeviceHistory(user.id, deviceHash)
 
-    const acsTransId = uuidv4()
-    const isFreictionless = rbaResult.decision === 'frictionless'
-
-    // Passkey 登録済みか確認
+    // パスキー登録済みか確認
     const hasPasskey = await prisma.webAuthnCredential.findFirst({
       where: { userId: user.id },
     })
 
-    let authType: 'FRICTIONLESS' | 'OTP' | 'PASSKEY' | 'PASSKEY_SPC' = 'FRICTIONLESS'
-    if (!isFreictionless) {
-      const hint = rbaResult.authTypeHint
-      if (hint === 'otp') {
-        // カードが常にOTPを要求（Passkey登録済みでも強制OTP）
-        authType = 'OTP'
-      } else if (hint === 'passkey') {
-        // Passkey登録済みならPasskey、未登録ならOTP（登録させる）
-        authType = hasPasskey ? 'PASSKEY' : 'OTP'
-      } else {
-        // auto: Passkey登録済みならPasskey、なければOTP
-        authType = hasPasskey ? 'PASSKEY' : 'OTP'
-      }
+    // authFlow から authType を決定
+    let authType: 'FRICTIONLESS' | 'OTP' | 'PASSKEY' | 'PASSKEY_SPC'
+    if (authFlow === 'frictionless') {
+      authType = 'FRICTIONLESS'
+    } else if (authFlow === 'otp') {
+      authType = 'OTP'
+    } else if (authFlow === 'webauthn') {
+      authType = hasPasskey ? 'PASSKEY' : 'OTP'
+    } else {
+      // spc: SPC capability はクライアント側の canMakePayment() で判定するため、
+      // パスキーがあれば PASSKEY_SPC としてクライアントに委ねる
+      authType = hasPasskey ? 'PASSKEY_SPC' : 'OTP'
     }
+
+    const isFreictionless = authType === 'FRICTIONLESS'
+    const acsTransId = uuidv4()
 
     await prisma.transaction.create({
       data: {
@@ -100,7 +88,7 @@ export async function threedsRoutes(server: FastifyInstance) {
         authType,
         authResult: 'ATTEMPTED',
         frictionless: isFreictionless,
-        deviceKnown: rbaResult.deviceKnown,
+        deviceKnown: true,
         deviceHash,
         ipAddress,
         challengeStartedAt: isFreictionless ? null : new Date(),
@@ -108,34 +96,27 @@ export async function threedsRoutes(server: FastifyInstance) {
       },
     })
 
+    server.log.info(
+      { acsTransId, authFlow, authType, hasPasskey: !!hasPasskey, userId: user.id },
+      '[areq] auth flow decided'
+    )
+
     if (isFreictionless) {
       await prisma.transaction.update({
         where: { acsTransId },
         data: { authResult: 'AUTHENTICATED' },
       })
-
-      if (rbaResult.deviceKnown) {
-        await updateDeviceHistory(user.id, deviceHash)
-      } else {
-        await prisma.deviceFingerprint.create({
-          data: { userId: user.id, deviceHash },
-        }).catch(() => {})
-      }
-
+      server.log.info({ acsTransId, authType: 'FRICTIONLESS' }, '[areq] frictionless authenticated')
       return { acsTransID: acsTransId, transStatus: 'Y', frictionless: true }
     }
 
-    // チャレンジが必要な場合: OTP生成
     if (authType === 'OTP') {
       await generateOtp(acsTransId)
     }
 
-    const acsURL = `${process.env.ACS_URL || 'http://localhost:3001'}/challenge/${acsTransId}`
-
     return {
       acsTransID: acsTransId,
       transStatus: 'C',
-      acsURL,
       authType,
       hasPasskey: !!hasPasskey,
     }
@@ -168,13 +149,12 @@ export async function threedsRoutes(server: FastifyInstance) {
       return reply.code(401).send({ error: 'Invalid or expired OTP' })
     }
 
-    // OTP検証成功時刻を記録（メトリクス計算用）
     await prisma.transaction.update({
       where: { acsTransId: acsTransID },
       data: { otpCompletedAt: new Date() },
     })
 
-    // OTP検証成功 → クライアントが /webauthn/register/options を呼んでオプション取得する
+    server.log.info({ acsTransID }, '[creq] OTP verified')
     return { status: 'show_enroll' }
   })
 

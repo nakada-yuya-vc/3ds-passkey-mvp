@@ -44,10 +44,18 @@ export async function webauthnRoutes(server: FastifyInstance) {
           transports: c.transports as AuthenticatorTransportFuture[],
         })),
         authenticatorSelection: {
-          authenticatorAttachment: 'platform', // Windows Hello / Touch ID に強制
+          authenticatorAttachment: 'platform',
           residentKey: 'required',
           userVerification: 'required',
         },
+        // Per W3C SPC spec / Chrome / MDN, the property is `isPayment: true`.
+        // (An earlier draft of the spec used `isPaymentCredential`; Chrome silently ignores
+        // the unknown key, so the credential is created without the SPC marker and any later
+        // SPC ceremony fails with NotAllowedError at show() time.)
+        // https://developer.mozilla.org/en-US/docs/Web/API/Payment_Request_API/Using_secure_payment_confirmation
+        extensions: {
+          payment: { isPayment: true },
+        } as Record<string, unknown>,
       })
 
       challengeStore.set(`reg:${acsTransId}`, options.challenge)
@@ -93,10 +101,27 @@ export async function webauthnRoutes(server: FastifyInstance) {
       }
 
       const { credentialID, credentialPublicKey, counter } = verification.registrationInfo
-      server.log.info({ credentialID, spcCapable: !!(credential as { clientExtensionResults?: { payment?: unknown } }).clientExtensionResults?.payment }, 'registering credential')
 
-      const spcCapable = !!(credential as { clientExtensionResults?: { payment?: unknown } })
-        .clientExtensionResults?.payment
+      // payment extension は登録時に clientExtensionResults へ出力されない (入力専用)。
+      // 登録オプションに常に payment extension を含めているため spcCapable は常に true (claim 値)。
+      // 実際に SPC が通るかは authenticator + ブラウザ依存。診断のため AAGUID と既知ラベルをログ出力する:
+      const spcCapable = true
+      const aaguid = verification.registrationInfo.aaguid
+      const KNOWN_AAGUIDS: Record<string, string> = {
+        '08987058-cadc-4b81-b6e1-30de50dcbe96': 'Windows Hello',
+        '9ddd1817-af5a-4672-a2b9-3e3dd95000a9': 'Windows Hello',
+        '6028b017-b1d4-4c02-b4b3-afcdafc96bb2': 'Windows Hello',
+        'ea9b8d66-4d01-1d21-3ce4-b6b48cb575d4': 'Google Password Manager',
+        'adce0002-35bc-c60a-648b-0b25f1f05503': 'iCloud Keychain',
+        'dd4ec289-e01d-41c9-bb89-70fa845d4bf2': 'iCloud Keychain (managed)',
+        'bada5566-a7aa-401f-bd96-45619a55120d': '1Password',
+        'd548826e-79b4-db40-a3d8-11116f7e8349': 'Bitwarden',
+      }
+      const authenticatorLabel = KNOWN_AAGUIDS[aaguid] ?? `Unknown (${aaguid})`
+      server.log.info(
+        { credentialID, aaguid, authenticatorLabel, spcCapable },
+        '[register] credential created — authenticator identified by AAGUID',
+      )
 
       await prisma.webAuthnCredential.create({
         data: {
@@ -104,11 +129,12 @@ export async function webauthnRoutes(server: FastifyInstance) {
           credentialId: credentialID,
           publicKey: Buffer.from(credentialPublicKey),
           signCount: counter,
-          aaguid: verification.registrationInfo.aaguid,
+          aaguid,
           transports: (credential as { response?: { transports?: string[] } }).response?.transports ?? [],
           spcCapable,
         },
       })
+      server.log.info({ acsTransId, credentialID, aaguid, authenticatorLabel }, '[register] passkey enrolled')
 
       challengeStore.delete(`reg:${acsTransId}`)
 
@@ -227,6 +253,7 @@ export async function webauthnRoutes(server: FastifyInstance) {
         data: { authResult: 'AUTHENTICATED', authenticatedAt: new Date() },
       })
 
+      server.log.info({ acsTransId, credentialId }, '[webauthn] authenticated')
       return { success: true }
     } catch (err) {
       server.log.error(err)

@@ -30,6 +30,11 @@ model WebAuthnCredential {
   aaguid       String?
   transports   String[]
   spcCapable   Boolean  @default(false)
+  // WebAuthn attestation statement format observed at registration ("packed",
+  // "tpm", "apple", "android-key", "android-safetynet", "fido-u2f", "none", ...).
+  // Captured for audit only; we do not yet reject on unknown values — that is a
+  // policy decision tracked in BACKLOG ("AAGUID allowlist / attestation policy").
+  attestationFormat String?
 
   createdAt  DateTime  @default(now())
   lastUsedAt DateTime?

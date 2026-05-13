@@ -2,7 +2,31 @@ import { FastifyInstance } from 'fastify'
 import { verifyAuthenticationResponse } from '@simplewebauthn/server'
 import type { AuthenticatorTransportFuture } from '@simplewebauthn/types'
 import { prisma } from '../prisma'
-import { consumeChallenge, findActiveChallenge, issueChallenge } from '../services/challenge'
+import { claimChallenge, issueChallenge } from '../services/challenge'
+import { currencyAlphaFromNumeric, formatMoneyForSpc } from '../services/money'
+import { verifySpcPaymentClientData } from '../services/spc-linking'
+
+// SPC mandates an https payeeOrigin. In dev we run merchant on http://localhost,
+// so we accept SPC_PAYEE_ORIGIN as an explicit override (must be https) and
+// otherwise fall back to coercing MERCHANT_URL — emitting a warning so the dev
+// hack is never silently shipped to prod.
+function resolvePayeeOrigin(log: { warn: (msg: string) => void }): string {
+  const explicit = process.env.SPC_PAYEE_ORIGIN
+  if (explicit) {
+    if (!explicit.startsWith('https://')) {
+      throw new Error(`SPC_PAYEE_ORIGIN must start with https:// (got ${explicit})`)
+    }
+    return explicit
+  }
+  const merchantOrigin =
+    process.env.MERCHANT_ORIGIN || process.env.MERCHANT_URL || 'http://localhost:3002'
+  if (merchantOrigin.startsWith('https://')) return merchantOrigin
+  const coerced = merchantOrigin.replace(/^http:\/\//, 'https://')
+  log.warn(
+    `[spc] payeeOrigin coerced ${merchantOrigin} -> ${coerced}. Set SPC_PAYEE_ORIGIN explicitly in non-dev environments.`,
+  )
+  return coerced
+}
 
 export async function spcRoutes(server: FastifyInstance) {
   const rpID = process.env.RP_ID || 'localhost'
@@ -28,14 +52,26 @@ export async function spcRoutes(server: FastifyInstance) {
         return reply.code(400).send({ error: 'No credentials found' })
       }
 
+      const currencyAlpha = currencyAlphaFromNumeric(transaction.purchaseCurrency)
+      if (!currencyAlpha) {
+        server.log.error(
+          { currency: transaction.purchaseCurrency },
+          '[spc] unsupported currency code — add it to ISO_4217_NUM_TO_ALPHA',
+        )
+        return reply.code(500).send({ error: 'Unsupported currency' })
+      }
+      let totalValue: string
+      try {
+        totalValue = formatMoneyForSpc(transaction.purchaseAmount, currencyAlpha)
+      } catch (err) {
+        server.log.error({ err, currencyAlpha }, '[spc] money formatting failed')
+        return reply.code(500).send({ error: 'Money formatting failed' })
+      }
+
       const { randomBytes } = await import('crypto')
       const challenge = randomBytes(32).toString('base64url')
 
-      // .env historically uses MERCHANT_URL; accept either name. SPC requires payeeOrigin to be HTTPS,
-      // so we coerce http:// to https:// (Chrome only displays this string; it doesn't fetch it).
-      const merchantOrigin =
-        process.env.MERCHANT_ORIGIN || process.env.MERCHANT_URL || 'http://localhost:3002'
-      const payeeOrigin = merchantOrigin.replace(/^http:\/\//, 'https://')
+      const payeeOrigin = resolvePayeeOrigin(server.log)
 
       await issueChallenge({
         acsTransId,
@@ -66,8 +102,17 @@ export async function spcRoutes(server: FastifyInstance) {
           transports: c.transports,
         })),
         merchantName: transaction.merchantName,
+        // `total` is shaped exactly like W3C PaymentCurrencyAmount and is pre-formatted
+        // for the currency's minor-unit exponent. Clients should pass it straight into
+        // `new PaymentRequest(...).total.amount`; never re-format on the client.
+        total: {
+          currency: currencyAlpha,
+          value: totalValue,
+        },
+        // Kept for display (e.g. the iframe header). Display rendering is currency-aware
+        // on the client side; SPC must use `total` above.
         amount: transaction.purchaseAmount,
-        currency: transaction.purchaseCurrency,
+        currencyNumeric: transaction.purchaseCurrency,
       }
     }
   )
@@ -78,7 +123,9 @@ export async function spcRoutes(server: FastifyInstance) {
       acsTransId: string
       assertion: Record<string, unknown>
     }
-  }>('/verify', async (request, reply) => {
+  }>('/verify', {
+    config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
+  }, async (request, reply) => {
     const { acsTransId, assertion } = request.body
 
     const transaction = await prisma.transaction.findUnique({
@@ -90,7 +137,9 @@ export async function spcRoutes(server: FastifyInstance) {
       return reply.code(404).send({ error: 'Transaction not found' })
     }
 
-    const challengeSession = await findActiveChallenge(acsTransId, 'SPC_AUTHENTICATE')
+    // Claim atomically: burn the challenge even if downstream checks fail,
+    // so a leaked challenge can't be reused against a second verify call.
+    const challengeSession = await claimChallenge(acsTransId, 'SPC_AUTHENTICATE')
     if (!challengeSession) {
       return reply.code(400).send({ error: 'No challenge found' })
     }
@@ -102,6 +151,46 @@ export async function spcRoutes(server: FastifyInstance) {
 
     if (!storedCred) {
       return reply.code(400).send({ error: 'Credential not found' })
+    }
+
+    // A-1: dynamic linking. Compare what the SPC UI signed (clientDataJSON.payment)
+    // against the transaction the server actually issued. Without this the SPC
+    // signature only proves "some payment dialog was confirmed" — not "THIS amount
+    // to THIS payee was confirmed", which is the whole PSD2 SCA / EMVCo 3DS bind.
+    const clientDataB64url = (assertion as { response?: { clientDataJSON?: string } })
+      .response?.clientDataJSON
+    if (!clientDataB64url) {
+      return reply.code(400).send({ error: 'Missing clientDataJSON' })
+    }
+
+    const currencyAlpha = currencyAlphaFromNumeric(transaction.purchaseCurrency)
+    if (!currencyAlpha) {
+      server.log.error(
+        { currency: transaction.purchaseCurrency },
+        '[spc] unsupported currency code — add it to ISO_4217_NUM_TO_ALPHA',
+      )
+      return reply.code(500).send({ error: 'Unsupported currency' })
+    }
+    let expectedValue: string
+    try {
+      expectedValue = formatMoneyForSpc(transaction.purchaseAmount, currencyAlpha)
+    } catch (err) {
+      server.log.error({ err, currencyAlpha }, '[spc] money formatting failed during verify')
+      return reply.code(500).send({ error: 'Money formatting failed' })
+    }
+
+    const linking = verifySpcPaymentClientData(clientDataB64url, {
+      rpId: rpID,
+      payeeOrigin: resolvePayeeOrigin(server.log),
+      value: expectedValue,
+      currencyAlpha,
+    })
+    if (!linking.ok) {
+      server.log.warn(
+        { acsTransId, reason: linking.reason },
+        '[spc] dynamic-linking mismatch',
+      )
+      return reply.code(401).send({ error: 'Dynamic linking mismatch', reason: linking.reason })
     }
 
     try {
@@ -127,15 +216,25 @@ export async function spcRoutes(server: FastifyInstance) {
         return reply.code(401).send({ error: 'SPC verification failed' })
       }
 
+      // Defense in depth: re-assert that the User Verification flag was set in authData.
+      // SimpleWebAuthn already enforces this when requireUserVerification:true is passed,
+      // but the PSD2 SCA "inherence" claim is load-bearing enough that we shouldn't rely
+      // on a transitive library guarantee. If this ever fires, the library regressed.
+      if (!verification.authenticationInfo.userVerified) {
+        server.log.error({ acsTransId }, '[spc] UV flag absent despite requireUserVerification')
+        return reply.code(401).send({ error: 'User verification not performed' })
+      }
+
       await prisma.webAuthnCredential.update({
         where: { credentialId: storedCred.credentialId },
         data: {
           signCount: verification.authenticationInfo.newCounter,
           lastUsedAt: new Date(),
+          // First successful SPC ceremony confirms the authenticator actually supports SPC
+          // (the third-party payment bit was retained). Flip the field to reflect reality.
+          spcCapable: true,
         },
       })
-
-      await consumeChallenge(challengeSession.id)
 
       await prisma.transaction.update({
         where: { acsTransId },

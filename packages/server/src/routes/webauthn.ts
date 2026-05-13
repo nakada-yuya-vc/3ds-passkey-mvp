@@ -7,7 +7,7 @@ import {
 } from '@simplewebauthn/server'
 import type { AuthenticatorTransportFuture } from '@simplewebauthn/types'
 import { prisma } from '../prisma'
-import { consumeChallenge, findActiveChallenge, issueChallenge } from '../services/challenge'
+import { claimChallenge, issueChallenge } from '../services/challenge'
 
 export async function webauthnRoutes(server: FastifyInstance) {
   const rpID = process.env.RP_ID || 'localhost'
@@ -47,6 +47,15 @@ export async function webauthnRoutes(server: FastifyInstance) {
           residentKey: 'required',
           userVerification: 'required',
         },
+        // Request a direct attestation statement so we can record the authenticator's
+        // claimed make/model (fmt + AAGUID) for audit. Acceptance does NOT currently
+        // depend on the attestation chain — that is a policy decision (which roots /
+        // AAGUIDs to trust) tracked in BACKLOG. SimpleWebAuthn still cryptographically
+        // verifies the statement format on the verify side; we just capture the result.
+        // Most platform authenticators (Windows Hello, Touch ID) return this without a
+        // user prompt; iCloud Keychain returns an anonymous "apple" attestation with a
+        // zeroed AAGUID, which is by design and is recorded as-is.
+        attestationType: 'direct',
         // Per W3C SPC spec / Chrome / MDN, the property is `isPayment: true`.
         // (An earlier draft of the spec used `isPaymentCredential`; Chrome silently ignores
         // the unknown key, so the credential is created without the SPC marker and any later
@@ -75,7 +84,9 @@ export async function webauthnRoutes(server: FastifyInstance) {
       acsTransId: string
       credential: Record<string, unknown>
     }
-  }>('/register/verify', async (request, reply) => {
+  }>('/register/verify', {
+    config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
+  }, async (request, reply) => {
     const { acsTransId, credential } = request.body
 
     const transaction = await prisma.transaction.findUnique({
@@ -87,7 +98,9 @@ export async function webauthnRoutes(server: FastifyInstance) {
       return reply.code(404).send({ error: 'Transaction not found' })
     }
 
-    const challengeSession = await findActiveChallenge(acsTransId, 'WEBAUTHN_REGISTER')
+    // Claim atomically: burn the challenge even if verification later fails,
+    // so the same challenge can't be replayed against a second verify attempt.
+    const challengeSession = await claimChallenge(acsTransId, 'WEBAUTHN_REGISTER')
     if (!challengeSession) {
       return reply.code(400).send({ error: 'No challenge found' })
     }
@@ -105,13 +118,16 @@ export async function webauthnRoutes(server: FastifyInstance) {
         return reply.code(400).send({ error: 'Verification failed' })
       }
 
-      const { credentialID, credentialPublicKey, counter } = verification.registrationInfo
+      const { credentialID, credentialPublicKey, counter, fmt } = verification.registrationInfo
 
-      // payment extension は登録時に clientExtensionResults へ出力されない (入力専用)。
-      // 登録オプションに常に payment extension を含めているため spcCapable は常に true (claim 値)。
-      // 実際に SPC が通るかは authenticator + ブラウザ依存。診断のため AAGUID と既知ラベルをログ出力する:
-      const spcCapable = true
+      // The SPC payment extension has no registration-time client output (W3C SPC issue #273),
+      // so at registration we can't actually prove the authenticator persisted the third-party
+      // payment bit. Start `spcCapable = false` and flip it to true only after the first
+      // successful SPC ceremony on this credential — i.e. real observed behaviour, not a claim.
+      // (A complementary AAGUID allowlist for known-good authenticators is tracked in BACKLOG.)
+      const spcCapable = false
       const aaguid = verification.registrationInfo.aaguid
+      const attestationFormat = fmt ?? null
       const KNOWN_AAGUIDS: Record<string, string> = {
         '08987058-cadc-4b81-b6e1-30de50dcbe96': 'Windows Hello',
         '9ddd1817-af5a-4672-a2b9-3e3dd95000a9': 'Windows Hello',
@@ -124,7 +140,7 @@ export async function webauthnRoutes(server: FastifyInstance) {
       }
       const authenticatorLabel = KNOWN_AAGUIDS[aaguid] ?? `Unknown (${aaguid})`
       server.log.info(
-        { credentialID, aaguid, authenticatorLabel, spcCapable },
+        { credentialID, aaguid, authenticatorLabel, attestationFormat, spcCapable },
         '[register] credential created — authenticator identified by AAGUID',
       )
 
@@ -137,11 +153,13 @@ export async function webauthnRoutes(server: FastifyInstance) {
           aaguid,
           transports: (credential as { response?: { transports?: string[] } }).response?.transports ?? [],
           spcCapable,
+          attestationFormat,
         },
       })
-      server.log.info({ acsTransId, credentialID, aaguid, authenticatorLabel }, '[register] passkey enrolled')
-
-      await consumeChallenge(challengeSession.id)
+      server.log.info(
+        { acsTransId, credentialID, aaguid, authenticatorLabel, attestationFormat },
+        '[register] passkey enrolled',
+      )
 
       await prisma.transaction.update({
         where: { acsTransId },
@@ -205,7 +223,9 @@ export async function webauthnRoutes(server: FastifyInstance) {
       acsTransId: string
       credential: Record<string, unknown>
     }
-  }>('/authenticate/verify', async (request, reply) => {
+  }>('/authenticate/verify', {
+    config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
+  }, async (request, reply) => {
     const { acsTransId, credential } = request.body
 
     const transaction = await prisma.transaction.findUnique({
@@ -217,7 +237,7 @@ export async function webauthnRoutes(server: FastifyInstance) {
       return reply.code(404).send({ error: 'Transaction not found' })
     }
 
-    const challengeSession = await findActiveChallenge(acsTransId, 'WEBAUTHN_AUTHENTICATE')
+    const challengeSession = await claimChallenge(acsTransId, 'WEBAUTHN_AUTHENTICATE')
     if (!challengeSession) {
       return reply.code(400).send({ error: 'No challenge found' })
     }
@@ -249,6 +269,12 @@ export async function webauthnRoutes(server: FastifyInstance) {
         return reply.code(401).send({ error: 'Authentication failed' })
       }
 
+      // Defense in depth — see comment in spc.ts. If UV is missing we cannot claim SCA inherence.
+      if (!verification.authenticationInfo.userVerified) {
+        server.log.error({ acsTransId }, '[webauthn] UV flag absent despite requireUserVerification')
+        return reply.code(401).send({ error: 'User verification not performed' })
+      }
+
       await prisma.webAuthnCredential.update({
         where: { credentialId: storedCred.credentialId },
         data: {
@@ -256,8 +282,6 @@ export async function webauthnRoutes(server: FastifyInstance) {
           lastUsedAt: new Date(),
         },
       })
-
-      await consumeChallenge(challengeSession.id)
 
       await prisma.transaction.update({
         where: { acsTransId },

@@ -26,22 +26,24 @@ This MVP demonstrates replacing SMS one-time passwords with **device biometrics 
 
 ### Authentication Flows
 
-- **Frictionless authentication** — Transactions assessed as low-risk by the RBA engine complete without any challenge
+- **Frictionless authentication** — Approved without any challenge
 - **OTP challenge** — SMS one-time password verification (mock mode: fixed code `123456`)
 - **Passkey challenge** — Biometric authentication with a previously registered passkey
 - **Enroll-on-challenge** — After successful OTP, users are prompted to register a passkey for future purchases
-- **SPC (Secure Payment Confirmation)** — Payment-specific authentication combining Payment Request API with WebAuthn
+- **SPC (Secure Payment Confirmation)** — Payment-specific authentication combining Payment Request API with WebAuthn. Credentials are registered with the `payment: { isPayment: true }` extension, which causes Chrome / Edge to bind them to the platform authenticator (Windows Hello / Touch ID / Android platform). This is intentional — it satisfies the possession-factor requirement of PSD2 SCA and EMVCo 3DS dynamic linking.
 
-### RBA (Risk-Based Authentication) Engine
+### How the flow is selected
 
-Automatically decides frictionless vs. challenge based on the following rules:
+In this MVP the test storefront ([`packages/merchant/src/Checkout.tsx`](packages/merchant/src/Checkout.tsx)) chooses the auth flow **per product**:
 
-| Condition | Decision |
-|-----------|----------|
-| Transaction amount ≥ ¥30,000 | Challenge required |
-| Unknown device | Challenge required |
-| First-time merchant | Challenge required |
-| Known device + known merchant | Frictionless |
+| Product | Price | Flow |
+|---------|-------|------|
+| Wireless Earbuds Pro | ¥12,800 | frictionless |
+| Smartwatch Elite | ¥34,800 | otp |
+| Mechanical Keyboard | ¥18,500 | webauthn |
+| Gaming Headset | ¥24,800 | spc |
+
+> A real RBA engine (amount + device-history based routing) would replace the per-product selection. A scaffold for that lives in `packages/server/src/services/rba.ts`; the current implementation just respects the merchant-specified flow.
 
 ### Admin Dashboard
 
@@ -141,18 +143,22 @@ pnpm install
 
 ### 3. Configure Environment Variables
 
-Create `packages/server/.env`:
+Create `.env` at the repository root (check if it already exists):
 
 ```env
-DATABASE_URL="postgresql://user:pass@localhost:5432/threeds_mvp"
+DATABASE_URL=postgresql://user:pass@localhost:5432/threeds_mvp
 PORT=3001
 RP_ID=localhost
 RP_NAME=3DS Passkey MVP
 RP_ORIGIN=http://localhost:3004
+ACS_URL=http://localhost:3004
+MERCHANT_URL=http://localhost:3002
 OTP_MOCK=true
+JWT_SECRET=change_me_in_production
 ```
 
 > **`OTP_MOCK=true`** fixes the OTP code to `123456` for development.
+> **`MERCHANT_URL`** is used to build the SPC `payeeOrigin` (the `http://` is rewritten to `https://` before being signed into the credential's clientDataJSON).
 
 ### 4. Start the Database and Apply Schema
 
@@ -185,29 +191,27 @@ This starts all four services concurrently:
 
 ### Testing Payments (Test Merchant)
 
-Open **http://localhost:3002** in your browser.
+Open **http://localhost:3002** in your browser. The test card is always `4111 1111 1111 1111` — **the auth flow is tied to the product**, so pick the product matching the flow you want to test.
 
-#### Test Cards
-
-| Card Number | Scenario |
-|-------------|----------|
-| `4111 1111 1111 1111` | Frictionless (no challenge) |
-| `4111 1111 1111 1129` | OTP challenge |
-| `4111 1111 1111 1137` | Passkey challenge (requires prior enrollment) |
-| `4111 1111 1111 1145` | High-value transaction → challenge |
+| Product | Flow | Expected behaviour |
+|---------|------|--------------------|
+| Wireless Earbuds Pro | Frictionless | Approved immediately, no challenge |
+| Smartwatch Elite | OTP | Enter OTP `123456` → prompted to enroll a passkey |
+| Mechanical Keyboard | WebAuthn | Biometric auth with an existing passkey (falls back to OTP if none) |
+| Gaming Headset | SPC | Secure Payment Confirmation dialog |
 
 #### Basic Flow
 
-1. Select a product and click **"Purchase"**
-2. Choose a test card and click **"Pay"**
-3. A challenge screen appears depending on the card selected
+1. Pick a product and click **"Buy Now"**
+2. Click **"Pay"**
+3. The challenge (or success) screen for the product's flow appears
 
-#### How to Register a Passkey
+#### Registering Your First Passkey
 
-1. Make a purchase with the **OTP challenge card** (`...1129`)
+1. Purchase **Smartwatch Elite (OTP)**
 2. Enter `123456` on the OTP screen
-3. When the **"Register Passkey"** prompt appears, complete enrollment using your device biometrics
-4. Future purchases with the **Passkey challenge card** (`...1137`) will use biometric authentication only
+3. Complete passkey enrollment with Windows Hello / Touch ID when prompted
+4. Subsequent **Mechanical Keyboard (WebAuthn)** or **Gaming Headset (SPC)** purchases will use biometric auth only
 
 ### Admin Dashboard
 
@@ -229,10 +233,17 @@ Open **http://localhost:3003** to monitor authentication metrics in real time.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/webauthn/register/options` | Get passkey registration options |
-| POST | `/webauthn/register/verify` | Verify and save passkey registration |
+| GET | `/webauthn/register/options` | Get passkey registration options (includes `extensions.payment.isPayment: true`) |
+| POST | `/webauthn/register/verify` | Verify and save passkey registration (AAGUID also logged) |
 | GET | `/webauthn/authenticate/options` | Get passkey authentication options |
 | POST | `/webauthn/authenticate/verify` | Verify passkey authentication |
+
+### SPC (Secure Payment Confirmation)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/spc/options` | Returns the SPC ceremony challenge, rpId, payeeOrigin, and the user's registered credentials |
+| POST | `/spc/verify` | Verifies an SPC assertion via `@simplewebauthn/server` with `expectedType: 'payment.get'` |
 
 ### Admin
 
@@ -262,41 +273,52 @@ OtpSession  (temporary OTP session)
 
 ---
 
-## Browser Constraints
+## Browser / OS Behaviour
 
-Passkey behavior varies significantly between browsers. Understanding these constraints is important when testing this MVP.
+### SPC credentials are intentionally device-bound
 
-### Passkey storage is tied to each browser ecosystem
+When a passkey is registered with the `payment: { isPayment: true }` extension, Chrome / Edge bind it to the **platform authenticator** (Windows Hello / Touch ID / Android platform authenticator) by design. This is not a workaround — it is what SPC requires to satisfy:
 
-Each browser saves passkeys to its own backend. **A passkey registered in one browser cannot be used in another.**
+- PSD2 SCA's possession-factor requirement
+- EMVCo 3DS dynamic linking (the signature must come from a device the user physically holds)
 
-| Browser | Passkey storage | SPC support | Cross-browser use |
-|---------|----------------|-------------|-------------------|
-| Microsoft Edge | Windows Hello (local TPM) | ✅ | ❌ Edge only |
-| Google Chrome | Google Password Manager (cloud sync) | ✅ | ❌ Chrome only |
-| Safari | iCloud Keychain (Apple ecosystem sync) | ❌ Not supported | ❌ Apple devices only |
-| Cross-browser | Via Bluetooth / QR code (CTAP2 hybrid) | — | ⚠️ Requires phone nearby |
+Concretely:
 
-> **Note:** SPC (Secure Payment Confirmation) is only supported in Chromium-based browsers (Chrome and Edge). Safari supports WebAuthn/Passkeys for general authentication but has not implemented the Payment Request API + WebAuthn integration required for SPC.
+- The credential can only be used for SPC on the device + browser where it was registered.
+- It is **not** synced via iCloud Keychain / Google Password Manager.
+- The AAGUID written to the database identifies the underlying platform authenticator (e.g. Windows Hello).
 
-### Edge vs Chrome behave differently
+Inspect server logs for `'[register] credential created — authenticator identified by AAGUID'` to see which authenticator actually stored the credential (known AAGUIDs get labelled automatically).
 
-- **Edge** routes directly to Windows Hello (Microsoft's own platform), prompting for Windows Hello PIN or biometrics.
-- **Chrome** checks Google Password Manager first. If the credential isn't there (e.g. it was registered via Edge), Chrome falls back to showing a cross-device (Bluetooth/QR) prompt instead of Windows Hello — even if the credential exists in Windows Hello.
+### SPC support by browser / OS
 
-> In this MVP, registering and authenticating within the **same browser** is required. This mirrors real-world usage where users authenticate on a single device/ecosystem.
+| Browser / OS | SPC | Notes |
+|--------------|-----|-------|
+| Chrome / Edge on Windows | ✅ | Bound to Windows Hello (biometric or PIN) |
+| Chrome / Edge on macOS | ✅ | Bound to Touch ID / Apple Watch |
+| Chrome on Android | ✅ | Bound to the device's platform biometric |
+| Safari | ❌ | Supports WebAuthn but not the Payment Request × WebAuthn integration (SPC) |
 
-### Windows Hello uses a PIN, not just biometrics
+### Windows Hello may prompt for PIN instead of biometrics
 
-On Windows, passkey authentication via Windows Hello may prompt for a **PIN** rather than a fingerprint or face scan, depending on device configuration. This is by design — the PIN is device-local and does not travel over the network, making it fundamentally different from an OTP.
+Depending on the device configuration, Windows Hello may ask for the **PIN** rather than a fingerprint or face scan. This is by design and is still a valid SPC possession factor — the PIN never leaves the device, unlike an OTP.
+
+### Non-secure contexts (HTTP over LAN IP) block WebAuthn / SPC
+
+If you open the merchant from a phone using the host machine's LAN IP (e.g. `http://192.168.x.x:3002`), the iframe at `http://192.168.x.x:3004` is not a secure context, so the browser hides `PublicKeyCredential` and `PaymentRequest`. The challenge UI surfaces this explicitly as "Passkey authentication unavailable here" instead of silently failing. To test from another device, expose HTTPS via:
+
+- An ngrok tunnel (`ngrok http 3002` / `ngrok http 3004`)
+- Vite's HTTPS dev mode (e.g. via `vite-plugin-mkcert`)
+
+There is intentionally **no silent fallback** to a weaker auth method when SPC is unavailable — EMVCo treats SPC as a distinct method, so masking failures would defeat the purpose of using it.
 
 ### Recommended test environment
 
-| Condition | Recommended setup |
-|-----------|------------------|
-| Full passkey flow | Use a single browser throughout (register + authenticate) |
-| Biometric auth (no PIN) | Use a device with fingerprint reader or Face ID configured in Windows Hello |
-| Cross-device test | Enable Bluetooth and use a phone with the same Google/Apple account |
+| Goal | Setup |
+|------|-------|
+| Verify SPC end-to-end | Chrome / Edge on Windows or macOS, served over `localhost` |
+| Biometric auth (no PIN) | Configure fingerprint or face recognition in Windows Hello |
+| Register & use on the same device | Use the same browser profile for registration and challenge |
 
 ---
 
@@ -315,6 +337,18 @@ allow="publickey-credentials-get *; publickey-credentials-create *; payment *"
 
 When `OTP_MOCK=true`, the correct code is always `123456`.  
 Check your `.env` file.
+
+### SPC dialog appears but the ceremony fails with `NotAllowedError`
+
+Check the following:
+
+- Verify the registration options include `extensions.payment.isPayment: true` (`packages/server/src/routes/webauthn.ts`). The older key `isPaymentCredential` is silently ignored by Chrome, so the credential is created without the SPC marker and `show()` later refuses to use it.
+- Confirm in the server log (`'[register] credential created'`) which AAGUID was stored — it should be a platform authenticator (Windows Hello, Touch ID, …).
+- If a credential was previously created with the wrong extension, re-create it. `pnpm db:reset` clears the database.
+
+### SPC verify returns 401 with `Unexpected authentication response type: payment.get`
+
+`@simplewebauthn/server` accepts only `webauthn.get` by default. SPC sets the type to `payment.get`, so `/spc/verify` passes `expectedType: 'payment.get'` to allow it. The rest of the verification (signature / challenge / RPID / UV flag) is identical to regular WebAuthn.
 
 ### Port 3001 is already in use
 

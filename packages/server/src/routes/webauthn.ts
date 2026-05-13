@@ -7,8 +7,7 @@ import {
 } from '@simplewebauthn/server'
 import type { AuthenticatorTransportFuture } from '@simplewebauthn/types'
 import { prisma } from '../prisma'
-
-const challengeStore = new Map<string, string>()
+import { consumeChallenge, findActiveChallenge, issueChallenge } from '../services/challenge'
 
 export async function webauthnRoutes(server: FastifyInstance) {
   const rpID = process.env.RP_ID || 'localhost'
@@ -58,7 +57,13 @@ export async function webauthnRoutes(server: FastifyInstance) {
         } as Record<string, unknown>,
       })
 
-      challengeStore.set(`reg:${acsTransId}`, options.challenge)
+      await issueChallenge({
+        acsTransId,
+        purpose: 'WEBAUTHN_REGISTER',
+        challenge: options.challenge,
+        rpId: rpID,
+        origin: rpOrigin,
+      })
 
       return options
     }
@@ -82,15 +87,15 @@ export async function webauthnRoutes(server: FastifyInstance) {
       return reply.code(404).send({ error: 'Transaction not found' })
     }
 
-    const expectedChallenge = challengeStore.get(`reg:${acsTransId}`)
-    if (!expectedChallenge) {
+    const challengeSession = await findActiveChallenge(acsTransId, 'WEBAUTHN_REGISTER')
+    if (!challengeSession) {
       return reply.code(400).send({ error: 'No challenge found' })
     }
 
     try {
       const verification = await verifyRegistrationResponse({
         response: credential as unknown as Parameters<typeof verifyRegistrationResponse>[0]['response'],
-        expectedChallenge,
+        expectedChallenge: challengeSession.challenge,
         expectedOrigin: rpOrigin,
         expectedRPID: rpID,
         requireUserVerification: true,
@@ -136,7 +141,7 @@ export async function webauthnRoutes(server: FastifyInstance) {
       })
       server.log.info({ acsTransId, credentialID, aaguid, authenticatorLabel }, '[register] passkey enrolled')
 
-      challengeStore.delete(`reg:${acsTransId}`)
+      await consumeChallenge(challengeSession.id)
 
       await prisma.transaction.update({
         where: { acsTransId },
@@ -182,7 +187,13 @@ export async function webauthnRoutes(server: FastifyInstance) {
         })),
       })
 
-      challengeStore.set(`auth:${acsTransId}`, options.challenge)
+      await issueChallenge({
+        acsTransId,
+        purpose: 'WEBAUTHN_AUTHENTICATE',
+        challenge: options.challenge,
+        rpId: rpID,
+        origin: rpOrigin,
+      })
 
       return options
     }
@@ -206,8 +217,8 @@ export async function webauthnRoutes(server: FastifyInstance) {
       return reply.code(404).send({ error: 'Transaction not found' })
     }
 
-    const expectedChallenge = challengeStore.get(`auth:${acsTransId}`)
-    if (!expectedChallenge) {
+    const challengeSession = await findActiveChallenge(acsTransId, 'WEBAUTHN_AUTHENTICATE')
+    if (!challengeSession) {
       return reply.code(400).send({ error: 'No challenge found' })
     }
 
@@ -222,7 +233,7 @@ export async function webauthnRoutes(server: FastifyInstance) {
     try {
       const verification = await verifyAuthenticationResponse({
         response: credential as unknown as Parameters<typeof verifyAuthenticationResponse>[0]['response'],
-        expectedChallenge,
+        expectedChallenge: challengeSession.challenge,
         expectedOrigin: rpOrigin,
         expectedRPID: rpID,
         requireUserVerification: true,
@@ -246,7 +257,7 @@ export async function webauthnRoutes(server: FastifyInstance) {
         },
       })
 
-      challengeStore.delete(`auth:${acsTransId}`)
+      await consumeChallenge(challengeSession.id)
 
       await prisma.transaction.update({
         where: { acsTransId },

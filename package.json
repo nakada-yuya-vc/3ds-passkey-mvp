@@ -9,7 +9,8 @@
     "db:migrate": "pnpm --filter server prisma:migrate",
     "db:push": "pnpm --filter server prisma:push",
     "db:generate": "pnpm --filter server prisma:generate",
-    "db:reset": "docker exec -it threeds_postgres psql -U user -d threeds_mvp -c \"TRUNCATE \\\"OtpSession\\\", \\\"Transaction\\\", \\\"DeviceFingerprint\\\", \\\"WebAuthnCredential\\\", \\\"User\\\" RESTART IDENTITY CASCADE;\"",
+    "db:reset": "docker exec -it threeds_postgres psql -U user -d threeds_mvp -c \"TRUNCATE \\\"ChallengeSession\\\", \\\"OtpSession\\\", \\\"Transaction\\\", \\\"DeviceFingerprint\\\", \\\"WebAuthnCredential\\\", \\\"User\\\" RESTART IDENTITY CASCADE;\"",
+    "DB:reset": "pnpm db:reset",
     "setup": "pnpm install && docker-compose up -d && pnpm --filter server prisma:push"
   },
   "devDependencies": {

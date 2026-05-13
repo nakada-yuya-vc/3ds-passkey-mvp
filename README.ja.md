@@ -198,7 +198,7 @@ pnpm dev
 | Wireless Earbuds Pro | Frictionless | チャレンジなしで即承認                                      |
 | Smartwatch Elite     | OTP          | OTP `123456` 入力 → Passkey 登録誘導（enroll-on-challenge） |
 | Mechanical Keyboard  | WebAuthn     | 既存 passkey で生体認証（無ければ OTP に切り替え）          |
-| Gaming Headset       | SPC          | Secure Payment Confirmation 専用ダイアログ                  |
+| Gaming Headset       | SPC          | Secure Payment Confirmation 専用ダイアログ。利用不可時は OTP fallback |
 
 #### 基本的な操作手順
 
@@ -211,7 +211,7 @@ pnpm dev
 1. **Smartwatch Elite (OTP)** で購入
 2. OTP 入力画面で `123456` を入力
 3. 「Register Passkey」画面で Windows Hello / Touch ID を使って登録
-4. 以降は **Mechanical Keyboard (WebAuthn)** や **Gaming Headset (SPC)** で生体認証のみで完了
+4. 以降は **Mechanical Keyboard (WebAuthn)** では生体認証、**Gaming Headset (SPC)** では SPC ダイアログを使います。SPC が利用できない場合は OTP に fallback します。
 
 ### 管理ダッシュボード
 
@@ -227,6 +227,7 @@ pnpm dev
 | -------- | ---------------------------------- | -------------------------------------------------------------------------- |
 | POST     | `/threeds/areq`                    | 認証リクエスト（AReq）。RBA 判定を実行しフリクションレスorチャレンジを決定 |
 | POST     | `/threeds/creq`                    | チャレンジリクエスト（CReq）。OTP コードを検証                             |
+| POST     | `/threeds/fallback/otp`            | SPC 利用不可時に OTP を発行し、トランザクションを OTP として記録            |
 | GET      | `/threeds/transaction/:acsTransId` | トランザクション情報取得                                                   |
 
 ### WebAuthn（Passkey）
@@ -265,6 +266,7 @@ User ──── WebAuthnCredential（Passkey 公開鍵）
  │       - authResult: AUTHENTICATED / NOT_AUTHENTICATED / ATTEMPTED
  │       - challengeStartedAt / otpCompletedAt / authenticatedAt（時刻計測）
  │       - enrolledPasskey（登録率計算用フラグ）
+ │       └──── ChallengeSession（WebAuthn / SPC challenge 一時セッション）
  │
  └──── DeviceFingerprint（デバイス学習）
 
@@ -300,12 +302,12 @@ Windows では、デバイスの設定によっては指紋や顔認証ではな
 
 ### 非 Secure Context（HTTPS でも localhost でもない URL）では WebAuthn / SPC が動かない
 
-スマートフォンから Wi-Fi 経由で `http://192.168.x.x:3004` のように IP で開発サーバーにアクセスすると、ブラウザが `PublicKeyCredential` と `PaymentRequest` を露出しないため、challenge-ui は「Passkey is unavailable here」と明示エラーを返します。動作確認したい場合は以下のいずれかで HTTPS を用意してください。
+スマートフォンから Wi-Fi 経由で `http://192.168.x.x:3004` のように IP で開発サーバーにアクセスすると、ブラウザが `PublicKeyCredential` と `PaymentRequest` を露出しません。この場合、SPC フローは `/threeds/fallback/otp` を呼び出して OTP チャレンジへ切り替えます。SPC 自体の動作確認をしたい場合は以下のいずれかで HTTPS を用意してください。
 
 - `ngrok http 3002` / `ngrok http 3004` のようなトンネル
 - `vite-plugin-mkcert` 等で Vite dev server を HTTPS 化
 
-なお、EMVCo 観点で SPC は他方式へ silent fallback すべきではないため、本実装でも SPC 不可な環境では明示エラーで止める方針です。
+fallback は UI 上で明示され、トランザクションの `authType` も `OTP` に更新されます。これにより、SPC 失敗がメトリクス上で隠れないようにしています。
 
 ### 推奨テスト環境
 

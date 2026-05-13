@@ -43,10 +43,14 @@ export function ChallengePage() {
         console.log('[challenge] phase=otp')
         setPhase('otp')
       } else if (info.authType === 'PASSKEY' || info.authType === 'PASSKEY_SPC') {
-        // WebAuthn / SPC both require a secure context (HTTPS or localhost).
-        // On Android over Wi-Fi this is typically http://192.168.x.x which is NOT secure,
-        // so neither API is available. Surface that clearly instead of letting the inner
-        // components throw an opaque "not supported" error.
+        if (info.authType === 'PASSKEY_SPC' && (!secure || !webAuthnSupported)) {
+          console.warn('[challenge] SPC unavailable in this context — falling back to OTP')
+          await startOtpFallback('spc_insecure_context')
+          return
+        }
+
+        // Plain WebAuthn requires a secure context (HTTPS or localhost).
+        // On Android over Wi-Fi this is typically http://192.168.x.x which is NOT secure.
         if (!secure || !webAuthnSupported) {
           console.warn('[challenge] passkey flow but insecure context — cannot proceed')
           setError(
@@ -59,12 +63,13 @@ export function ChallengePage() {
         }
 
         if (info.authType === 'PASSKEY_SPC') {
-          // Probe canMakePayment for diagnostics only — do NOT fall back to plain WebAuthn.
-          // EMVCo certification treats SPC as a distinct authentication method; silently
-          // degrading to a non-SPC passkey would mask the real failure.
           const spcAvailable = info.credentials.length > 0
             && await checkSpcAvailability(info.credentials.map(c => c.credentialId))
-          console.log('[challenge] authType=PASSKEY_SPC spcAvailable=%s (diagnostic only, no fallback)', spcAvailable)
+          console.log('[challenge] authType=PASSKEY_SPC spcAvailable=%s', spcAvailable)
+          if (!spcAvailable) {
+            await startOtpFallback('spc_unavailable')
+            return
+          }
           setPhase('spc')
         } else {
           console.log('[challenge] authType=PASSKEY phase=passkey')
@@ -78,6 +83,23 @@ export function ChallengePage() {
       setError('Failed to load transaction information')
       setPhase('error')
     }
+  }
+
+  async function startOtpFallback(reason: string) {
+    if (!acsTransId) return
+
+    const res = await fetch('/threeds/fallback/otp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ acsTransID: acsTransId, reason }),
+    })
+
+    if (!res.ok) {
+      throw new Error('Failed to start OTP fallback')
+    }
+
+    setTxInfo(prev => prev ? { ...prev, authType: 'OTP' } : prev)
+    setPhase('otp')
   }
 
   async function checkSpcAvailability(credentialIds: string[]): Promise<boolean> {
@@ -113,6 +135,13 @@ export function ChallengePage() {
   }
 
   function handleOtpSuccess() {
+    if (txInfo?.hasPasskey) {
+      console.log('[challenge] result: OTP fallback')
+      setPhase('done')
+      notifyParent('authenticated', 'OTP fallback')
+      return
+    }
+
     setPhase('enroll')
   }
 
@@ -186,6 +215,7 @@ export function ChallengePage() {
           merchantName={txInfo.merchantName ?? ''}
           amount={txInfo.purchaseAmount}
           onSuccess={handleSpcSuccess}
+          onFallback={() => startOtpFallback('spc_error')}
         />
       )}
     </Layout>

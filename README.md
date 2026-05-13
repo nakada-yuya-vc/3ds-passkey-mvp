@@ -198,7 +198,7 @@ Open **http://localhost:3002** in your browser. The test card is always `4111 11
 | Wireless Earbuds Pro | Frictionless | Approved immediately, no challenge                                  |
 | Smartwatch Elite     | OTP          | Enter OTP `123456` → prompted to enroll a passkey                   |
 | Mechanical Keyboard  | WebAuthn     | Biometric auth with an existing passkey (falls back to OTP if none) |
-| Gaming Headset       | SPC          | Secure Payment Confirmation dialog                                  |
+| Gaming Headset       | SPC          | Secure Payment Confirmation dialog, with OTP fallback if unavailable |
 
 #### Basic Flow
 
@@ -211,7 +211,7 @@ Open **http://localhost:3002** in your browser. The test card is always `4111 11
 1. Purchase **Smartwatch Elite (OTP)**
 2. Enter `123456` on the OTP screen
 3. Complete passkey enrollment with Windows Hello / Touch ID when prompted
-4. Subsequent **Mechanical Keyboard (WebAuthn)** or **Gaming Headset (SPC)** purchases will use biometric auth only
+4. Subsequent **Mechanical Keyboard (WebAuthn)** purchases use biometric auth; **Gaming Headset (SPC)** uses the SPC dialog and falls back to OTP when SPC is unavailable
 
 ### Admin Dashboard
 
@@ -227,6 +227,7 @@ Open **http://localhost:3003** to monitor authentication metrics in real time.
 | ------ | ---------------------------------- | ---------------------------------------------------------------------------------------- |
 | POST   | `/threeds/areq`                    | Authentication Request (AReq). Runs RBA evaluation and decides frictionless or challenge |
 | POST   | `/threeds/creq`                    | Challenge Request (CReq). Verifies the OTP code                                          |
+| POST   | `/threeds/fallback/otp`            | Issues an OTP and records the transaction as OTP when SPC is unavailable                 |
 | GET    | `/threeds/transaction/:acsTransId` | Fetch transaction details                                                                |
 
 ### WebAuthn (Passkey)
@@ -265,6 +266,7 @@ User ──── WebAuthnCredential  (passkey public key)
  │       - authResult: AUTHENTICATED / NOT_AUTHENTICATED / ATTEMPTED
  │       - challengeStartedAt / otpCompletedAt / authenticatedAt  (timing)
  │       - enrolledPasskey  (flag for enrollment rate calculation)
+ │       └──── ChallengeSession  (temporary WebAuthn/SPC challenges)
  │
  └──── DeviceFingerprint  (device learning)
 
@@ -310,7 +312,7 @@ If you open the merchant from a phone using the host machine's LAN IP (e.g. `htt
 - An ngrok tunnel (`ngrok http 3002` / `ngrok http 3004`)
 - Vite's HTTPS dev mode (e.g. via `vite-plugin-mkcert`)
 
-There is intentionally **no silent fallback** to a weaker auth method when SPC is unavailable — EMVCo treats SPC as a distinct method, so masking failures would defeat the purpose of using it.
+When SPC is unavailable, this sample explicitly switches the challenge to OTP by calling `/threeds/fallback/otp`. The fallback is visible in the UI and the transaction is recorded as `OTP`, so SPC failures are not hidden in the metrics.
 
 ### Recommended test environment
 

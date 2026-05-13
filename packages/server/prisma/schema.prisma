@@ -36,21 +36,21 @@ model WebAuthnCredential {
 }
 
 model Transaction {
-  id                   String  @id @default(uuid())
-  threeDSServerTransId String  @unique
-  acsTransId           String  @unique @default(uuid())
+  id                   String @id @default(uuid())
+  threeDSServerTransId String @unique
+  acsTransId           String @unique @default(uuid())
 
-  userId         String?
-  user           User?   @relation(fields: [userId], references: [id])
-  cardNumberHash String
-  merchantId     String
-  merchantName   String?
-  purchaseAmount Int
-  purchaseCurrency String @default("392")
+  userId           String?
+  user             User?   @relation(fields: [userId], references: [id])
+  cardNumberHash   String
+  merchantId       String
+  merchantName     String?
+  purchaseAmount   Int
+  purchaseCurrency String  @default("392")
 
-  authType   AuthType
-  authResult AuthResult
-  frictionless Boolean @default(false)
+  authType     AuthType
+  authResult   AuthResult
+  frictionless Boolean    @default(false)
 
   requestedAt        DateTime  @default(now())
   challengeStartedAt DateTime?
@@ -62,6 +62,8 @@ model Transaction {
   deviceKnown Boolean?
   deviceHash  String?
   ipAddress   String?
+
+  challenges ChallengeSession[]
 }
 
 enum AuthType {
@@ -75,6 +77,33 @@ enum AuthResult {
   AUTHENTICATED
   NOT_AUTHENTICATED
   ATTEMPTED
+}
+
+enum ChallengePurpose {
+  WEBAUTHN_REGISTER
+  WEBAUTHN_AUTHENTICATE
+  SPC_AUTHENTICATE
+}
+
+model ChallengeSession {
+  id         String           @id @default(uuid())
+  acsTransId String
+  purpose    ChallengePurpose
+  challenge  String           @unique
+
+  rpId         String
+  origin       String?
+  credentialId String?
+
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  transaction Transaction @relation(fields: [acsTransId], references: [acsTransId], onDelete: Cascade)
+
+  @@index([acsTransId, purpose, consumedAt])
+  @@index([expiresAt])
 }
 
 model DeviceFingerprint {

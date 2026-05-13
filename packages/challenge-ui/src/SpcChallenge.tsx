@@ -4,9 +4,24 @@ interface Props {
   acsTransId: string
   credentials: Array<{ credentialId: string; spcCapable: boolean; transports: string[] }>
   merchantName: string
-  amount: number
   onSuccess: () => void
   onFallback: () => void
+}
+
+interface SpcOptions {
+  challenge: string
+  rpId: string
+  payeeOrigin: string
+  credentials: Array<{ credentialId: string; spcCapable: boolean; transports: string[] }>
+  merchantName?: string | null
+  instrument: {
+    displayName: string
+    icon: string
+  }
+  total: {
+    currency: string
+    value: string
+  }
 }
 
 function base64urlToBuffer(base64url: string): Uint8Array {
@@ -18,7 +33,7 @@ function base64urlToBuffer(base64url: string): Uint8Array {
   return bytes
 }
 
-export function SpcChallenge({ acsTransId, credentials, merchantName, amount, onSuccess, onFallback }: Props) {
+export function SpcChallenge({ acsTransId, credentials, merchantName, onSuccess, onFallback }: Props) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -39,11 +54,12 @@ export function SpcChallenge({ acsTransId, credentials, merchantName, amount, on
 
       const optRes = await fetch(`/spc/options?acsTransId=${acsTransId}`)
       if (!optRes.ok) throw new Error('Failed to fetch SPC options')
-      const opts = await optRes.json()
+      const opts: SpcOptions = await optRes.json()
 
-      const credentialIds = credentials.map(c => base64urlToBuffer(c.credentialId))
+      const spcCredentials = opts.credentials.length > 0 ? opts.credentials : credentials
+      const credentialIds = spcCredentials.map(c => base64urlToBuffer(c.credentialId))
       console.log('[spc] opts', JSON.stringify(opts))
-      console.log('[spc] credential ids (base64url)', credentials.map(c => c.credentialId))
+      console.log('[spc] credential ids (base64url)', spcCredentials.map(c => c.credentialId))
       console.log('[spc] rpId=%s payeeOrigin=%s callerOrigin=%s', opts.rpId, opts.payeeOrigin, window.location.origin)
 
       const request = new PaymentRequest(
@@ -54,10 +70,8 @@ export function SpcChallenge({ acsTransId, credentials, merchantName, amount, on
             challenge: base64urlToBuffer(opts.challenge),
             rpId: opts.rpId,
             payeeOrigin: opts.payeeOrigin,
-            instrument: {
-              displayName: opts.merchantName ?? merchantName,
-              icon: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
-            },
+            payeeName: opts.merchantName ?? merchantName,
+            instrument: opts.instrument,
             timeout: 60000,
           },
         }],

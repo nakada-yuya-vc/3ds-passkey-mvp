@@ -50,19 +50,25 @@ Already fixed in this branch:
 
 ## P1 — should land before any external review
 
-### B-1. Browser Bound Key (BBK) support
+### B-1. Browser Bound Key (BBK) positioning / support
 **Refs:** [#321](https://github.com/w3c/secure-payment-confirmation/issues/321),
 [#290](https://github.com/w3c/secure-payment-confirmation/issues/290),
 [#288](https://github.com/w3c/secure-payment-confirmation/issues/288),
 [#287](https://github.com/w3c/secure-payment-confirmation/issues/287),
 [#315](https://github.com/w3c/secure-payment-confirmation/issues/315).
 
-Since passkeys are syncable, possession-factor parity with PSD2 SCA increasingly
-depends on the BBK. The current MVP signs only with the WebAuthn credential, so
-on a synced second device the SCA "possession" claim is weak. We need to either:
-1. Accept and verify the BBK signature alongside the WebAuthn assertion, or
-2. Document explicitly that the MVP claims authentication but not full SCA
-   possession in v1.
+BBK is still an active W3C discussion area: its role in device possession,
+availability detection, storage properties, and requiredness are not settled
+across all stakeholders. This MVP therefore stays neutral: it verifies the
+SPC/WebAuthn assertion and transaction-confirmation data, but does not claim
+full PSD2 SCA or EMVCo compliance based on BBK.
+
+Before an external review, keep this stance explicit and decide whether the
+next milestone should:
+1. Accept and verify BBK outputs where browsers provide them,
+2. Treat BBK as an optional signal and document the trust level, or
+3. Keep BBK out of scope and frame the repository as an SPC / 3DS UX integration
+   prototype.
 
 ### P1 — AAGUID allowlist / attestation policy (the policy half of B-2 + C-4)
 **Refs:** [#273](https://github.com/w3c/secure-payment-confirmation/issues/273),

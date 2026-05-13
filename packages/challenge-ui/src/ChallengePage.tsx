@@ -7,6 +7,8 @@ import { EnrollPasskey } from './EnrollPasskey'
 
 type Phase = 'loading' | 'otp' | 'passkey' | 'spc' | 'enroll' | 'done' | 'error'
 
+const SPC_PROBE_ICON = 'data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2296%22%20height%3D%2264%22%20viewBox%3D%220%200%2096%2064%22%3E%3Crect%20width%3D%2296%22%20height%3D%2264%22%20rx%3D%2210%22%20fill%3D%22%231F2937%22%2F%3E%3Crect%20x%3D%2210%22%20y%3D%2214%22%20width%3D%2222%22%20height%3D%2216%22%20rx%3D%223%22%20fill%3D%22%23F8D17C%22%2F%3E%3Cpath%20d%3D%22M12%2044h26M12%2052h42%22%20stroke%3D%22%23E5E7EB%22%20stroke-width%3D%224%22%20stroke-linecap%3D%22round%22%2F%3E%3Ccircle%20cx%3D%2268%22%20cy%3D%2242%22%20r%3D%229%22%20fill%3D%22%2360A5FA%22%2F%3E%3Ccircle%20cx%3D%2278%22%20cy%3D%2242%22%20r%3D%229%22%20fill%3D%22%23F472B6%22%20fill-opacity%3D%22.85%22%2F%3E%3C%2Fsvg%3E'
+
 interface TransactionInfo {
   acsTransId: string
   authType: 'OTP' | 'PASSKEY' | 'PASSKEY_SPC' | 'FRICTIONLESS'
@@ -114,7 +116,7 @@ export function ChallengePage() {
             rpId: window.location.hostname,
             challenge: new Uint8Array(32),
             payeeOrigin: window.location.origin.replace(/^http:\/\//, 'https://'),
-            instrument: { displayName: 'test', icon: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==' },
+            instrument: { displayName: 'test', icon: SPC_PROBE_ICON },
           },
         }],
         { total: { label: 'test', amount: { currency: 'JPY', value: '0' } } }
@@ -213,7 +215,6 @@ export function ChallengePage() {
           acsTransId={acsTransId!}
           credentials={txInfo.credentials}
           merchantName={txInfo.merchantName ?? ''}
-          amount={txInfo.purchaseAmount}
           onSuccess={handleSpcSuccess}
           onFallback={() => startOtpFallback('spc_error')}
         />

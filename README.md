@@ -6,7 +6,7 @@ A prototype implementation that replaces SMS OTP with Passkeys (WebAuthn/FIDO2) 
 
 ---
 
-![Demo](./demo-en.gif)
+![Demo](./demo.gif)
 
 ## Overview
 
@@ -14,11 +14,11 @@ This MVP demonstrates replacing SMS one-time passwords with **device biometrics 
 
 ### Key Metrics Being Validated
 
-| Metric | Description |
-|--------|-------------|
-| Challenge completion rate | Passkeys eliminate OTP input errors and reduce drop-offs |
-| Authentication time | Near-zero wait time compared to SMS delivery + manual entry |
-| Passkey enrollment rate | In-flow enrollment (enroll-on-challenge) as an adoption strategy |
+| Metric                    | Description                                                      |
+| ------------------------- | ---------------------------------------------------------------- |
+| Challenge completion rate | Passkeys eliminate OTP input errors and reduce drop-offs         |
+| Authentication time       | Near-zero wait time compared to SMS delivery + manual entry      |
+| Passkey enrollment rate   | In-flow enrollment (enroll-on-challenge) as an adoption strategy |
 
 ---
 
@@ -36,12 +36,12 @@ This MVP demonstrates replacing SMS one-time passwords with **device biometrics 
 
 In this MVP the test storefront ([`packages/merchant/src/Checkout.tsx`](packages/merchant/src/Checkout.tsx)) chooses the auth flow **per product**:
 
-| Product | Price | Flow |
-|---------|-------|------|
+| Product              | Price   | Flow         |
+| -------------------- | ------- | ------------ |
 | Wireless Earbuds Pro | ¥12,800 | frictionless |
-| Smartwatch Elite | ¥34,800 | otp |
-| Mechanical Keyboard | ¥18,500 | webauthn |
-| Gaming Headset | ¥24,800 | spc |
+| Smartwatch Elite     | ¥34,800 | otp          |
+| Mechanical Keyboard  | ¥18,500 | webauthn     |
+| Gaming Headset       | ¥24,800 | spc          |
 
 > A real RBA engine (amount + device-history based routing) would replace the per-product selection. A scaffold for that lives in `packages/server/src/services/rba.ts`; the current implementation just respects the merchant-specified flow.
 
@@ -107,16 +107,16 @@ passkey-mvp/
 
 ## Tech Stack
 
-| Category | Technology |
-|----------|-----------|
-| Backend | Node.js, Fastify, TypeScript |
-| ORM | Prisma |
-| Database | PostgreSQL 16 |
-| Frontend | React 18, Vite 5, TypeScript |
-| WebAuthn | @simplewebauthn/server v10, @simplewebauthn/browser v10 |
-| Charts | Recharts |
-| Package manager | pnpm workspaces |
-| Container | Docker (PostgreSQL only) |
+| Category        | Technology                                              |
+| --------------- | ------------------------------------------------------- |
+| Backend         | Node.js, Fastify, TypeScript                            |
+| ORM             | Prisma                                                  |
+| Database        | PostgreSQL 16                                           |
+| Frontend        | React 18, Vite 5, TypeScript                            |
+| WebAuthn        | @simplewebauthn/server v10, @simplewebauthn/browser v10 |
+| Charts          | Recharts                                                |
+| Package manager | pnpm workspaces                                         |
+| Container       | Docker (PostgreSQL only)                                |
 
 ---
 
@@ -178,12 +178,12 @@ pnpm dev
 
 This starts all four services concurrently:
 
-| Service | URL |
-|---------|-----|
-| API server | http://localhost:3001 |
+| Service            | URL                   |
+| ------------------ | --------------------- |
+| API server         | http://localhost:3001 |
 | Challenge UI (ACS) | http://localhost:3004 |
-| Test merchant | http://localhost:3002 |
-| Admin dashboard | http://localhost:3003 |
+| Test merchant      | http://localhost:3002 |
+| Admin dashboard    | http://localhost:3003 |
 
 ---
 
@@ -193,12 +193,12 @@ This starts all four services concurrently:
 
 Open **http://localhost:3002** in your browser. The test card is always `4111 1111 1111 1111` — **the auth flow is tied to the product**, so pick the product matching the flow you want to test.
 
-| Product | Flow | Expected behaviour |
-|---------|------|--------------------|
-| Wireless Earbuds Pro | Frictionless | Approved immediately, no challenge |
-| Smartwatch Elite | OTP | Enter OTP `123456` → prompted to enroll a passkey |
-| Mechanical Keyboard | WebAuthn | Biometric auth with an existing passkey (falls back to OTP if none) |
-| Gaming Headset | SPC | Secure Payment Confirmation dialog |
+| Product              | Flow         | Expected behaviour                                                  |
+| -------------------- | ------------ | ------------------------------------------------------------------- |
+| Wireless Earbuds Pro | Frictionless | Approved immediately, no challenge                                  |
+| Smartwatch Elite     | OTP          | Enter OTP `123456` → prompted to enroll a passkey                   |
+| Mechanical Keyboard  | WebAuthn     | Biometric auth with an existing passkey (falls back to OTP if none) |
+| Gaming Headset       | SPC          | Secure Payment Confirmation dialog                                  |
 
 #### Basic Flow
 
@@ -223,35 +223,35 @@ Open **http://localhost:3003** to monitor authentication metrics in real time.
 
 ### 3DS Flow
 
-| Method | Path | Description |
-|--------|------|-------------|
-| POST | `/threeds/areq` | Authentication Request (AReq). Runs RBA evaluation and decides frictionless or challenge |
-| POST | `/threeds/creq` | Challenge Request (CReq). Verifies the OTP code |
-| GET | `/threeds/transaction/:acsTransId` | Fetch transaction details |
+| Method | Path                               | Description                                                                              |
+| ------ | ---------------------------------- | ---------------------------------------------------------------------------------------- |
+| POST   | `/threeds/areq`                    | Authentication Request (AReq). Runs RBA evaluation and decides frictionless or challenge |
+| POST   | `/threeds/creq`                    | Challenge Request (CReq). Verifies the OTP code                                          |
+| GET    | `/threeds/transaction/:acsTransId` | Fetch transaction details                                                                |
 
 ### WebAuthn (Passkey)
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/webauthn/register/options` | Get passkey registration options (includes `extensions.payment.isPayment: true`) |
-| POST | `/webauthn/register/verify` | Verify and save passkey registration (AAGUID also logged) |
-| GET | `/webauthn/authenticate/options` | Get passkey authentication options |
-| POST | `/webauthn/authenticate/verify` | Verify passkey authentication |
+| Method | Path                             | Description                                                                      |
+| ------ | -------------------------------- | -------------------------------------------------------------------------------- |
+| GET    | `/webauthn/register/options`     | Get passkey registration options (includes `extensions.payment.isPayment: true`) |
+| POST   | `/webauthn/register/verify`      | Verify and save passkey registration (AAGUID also logged)                        |
+| GET    | `/webauthn/authenticate/options` | Get passkey authentication options                                               |
+| POST   | `/webauthn/authenticate/verify`  | Verify passkey authentication                                                    |
 
 ### SPC (Secure Payment Confirmation)
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/spc/options` | Returns the SPC ceremony challenge, rpId, payeeOrigin, and the user's registered credentials |
-| POST | `/spc/verify` | Verifies an SPC assertion via `@simplewebauthn/server` with `expectedType: 'payment.get'` |
+| Method | Path           | Description                                                                                  |
+| ------ | -------------- | -------------------------------------------------------------------------------------------- |
+| GET    | `/spc/options` | Returns the SPC ceremony challenge, rpId, payeeOrigin, and the user's registered credentials |
+| POST   | `/spc/verify`  | Verifies an SPC assertion via `@simplewebauthn/server` with `expectedType: 'payment.get'`    |
 
 ### Admin
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/admin/metrics` | KPI metrics (`?from=&to=`) |
-| GET | `/admin/transactions` | Transaction list (`?limit=&offset=`) |
-| GET | `/admin/timeseries` | Time-series data (`?from=&to=`) |
+| Method | Path                  | Description                          |
+| ------ | --------------------- | ------------------------------------ |
+| GET    | `/admin/metrics`      | KPI metrics (`?from=&to=`)           |
+| GET    | `/admin/transactions` | Transaction list (`?limit=&offset=`) |
+| GET    | `/admin/timeseries`   | Time-series data (`?from=&to=`)      |
 
 ---
 
@@ -292,12 +292,12 @@ Inspect server logs for `'[register] credential created — authenticator identi
 
 ### SPC support by browser / OS
 
-| Browser / OS | SPC | Notes |
-|--------------|-----|-------|
-| Chrome / Edge on Windows | ✅ | Bound to Windows Hello (biometric or PIN) |
-| Chrome / Edge on macOS | ✅ | Bound to Touch ID / Apple Watch |
-| Chrome on Android | ✅ | Bound to the device's platform biometric |
-| Safari | ❌ | Supports WebAuthn but not the Payment Request × WebAuthn integration (SPC) |
+| Browser / OS             | SPC | Notes                                                                      |
+| ------------------------ | --- | -------------------------------------------------------------------------- |
+| Chrome / Edge on Windows | ✅  | Bound to Windows Hello (biometric or PIN)                                  |
+| Chrome / Edge on macOS   | ✅  | Bound to Touch ID / Apple Watch                                            |
+| Chrome on Android        | ✅  | Bound to the device's platform biometric                                   |
+| Safari                   | ❌  | Supports WebAuthn but not the Payment Request × WebAuthn integration (SPC) |
 
 ### Windows Hello may prompt for PIN instead of biometrics
 
@@ -314,10 +314,10 @@ There is intentionally **no silent fallback** to a weaker auth method when SPC i
 
 ### Recommended test environment
 
-| Goal | Setup |
-|------|-------|
-| Verify SPC end-to-end | Chrome / Edge on Windows or macOS, served over `localhost` |
-| Biometric auth (no PIN) | Configure fingerprint or face recognition in Windows Hello |
+| Goal                              | Setup                                                       |
+| --------------------------------- | ----------------------------------------------------------- |
+| Verify SPC end-to-end             | Chrome / Edge on Windows or macOS, served over `localhost`  |
+| Biometric auth (no PIN)           | Configure fingerprint or face recognition in Windows Hello  |
 | Register & use on the same device | Use the same browser profile for registration and challenge |
 
 ---

@@ -4,7 +4,7 @@ EMV 3-D Secure チャレンジ認証において、SMS OTP をパスキー（Web
 
 ---
 
-![デモ](./demo-ja.gif)
+![デモ](./demo.gif)
 
 ## 概要
 
@@ -12,11 +12,11 @@ EMV 3-D Secure チャレンジ認証において、SMS OTP をパスキー（Web
 
 ### 主な検証ポイント
 
-| 指標 | 内容 |
-|------|------|
-| チャレンジ完了率の向上 | Passkey はキャンセルが少なく、OTP の入力ミスもない |
-| 認証時間の短縮 | OTP 受信〜入力にかかる時間をゼロに近づける |
-| Passkey 登録率 | OTP 成功後のその場登録（enroll-on-challenge）による普及施策 |
+| 指標                   | 内容                                                        |
+| ---------------------- | ----------------------------------------------------------- |
+| チャレンジ完了率の向上 | Passkey はキャンセルが少なく、OTP の入力ミスもない          |
+| 認証時間の短縮         | OTP 受信〜入力にかかる時間をゼロに近づける                  |
+| Passkey 登録率         | OTP 成功後のその場登録（enroll-on-challenge）による普及施策 |
 
 ---
 
@@ -34,12 +34,12 @@ EMV 3-D Secure チャレンジ認証において、SMS OTP をパスキー（Web
 
 この MVP では加盟店側（テスト用ストアフロント）が **商品ごとに認証フローを指定** する方式を採っています。実装は [`packages/merchant/src/Checkout.tsx`](packages/merchant/src/Checkout.tsx) を参照してください。
 
-| 商品 | 価格 | 指定フロー |
-|------|------|----------|
+| 商品                 | 価格    | 指定フロー   |
+| -------------------- | ------- | ------------ |
 | Wireless Earbuds Pro | ¥12,800 | frictionless |
-| Smartwatch Elite | ¥34,800 | otp |
-| Mechanical Keyboard | ¥18,500 | webauthn |
-| Gaming Headset | ¥24,800 | spc |
+| Smartwatch Elite     | ¥34,800 | otp          |
+| Mechanical Keyboard  | ¥18,500 | webauthn     |
+| Gaming Headset       | ¥24,800 | spc          |
 
 > 実 RBA エンジン（金額・デバイス履歴に基づく自動振り分け）は将来拡張ポイントとして `packages/server/src/services/rba.ts` にスケルトンを置いていますが、現状は加盟店指定のフローを尊重します。
 
@@ -105,16 +105,16 @@ passkey-mvp/
 
 ## 技術スタック
 
-| カテゴリ | 技術 |
-|---------|------|
-| バックエンド | Node.js, Fastify, TypeScript |
-| ORM | Prisma |
-| DB | PostgreSQL 16 |
-| フロントエンド | React 18, Vite 5, TypeScript |
-| WebAuthn | @simplewebauthn/server v10, @simplewebauthn/browser v10 |
-| チャート | Recharts |
-| パッケージ管理 | pnpm workspaces |
-| コンテナ | Docker (PostgreSQL のみ) |
+| カテゴリ       | 技術                                                    |
+| -------------- | ------------------------------------------------------- |
+| バックエンド   | Node.js, Fastify, TypeScript                            |
+| ORM            | Prisma                                                  |
+| DB             | PostgreSQL 16                                           |
+| フロントエンド | React 18, Vite 5, TypeScript                            |
+| WebAuthn       | @simplewebauthn/server v10, @simplewebauthn/browser v10 |
+| チャート       | Recharts                                                |
+| パッケージ管理 | pnpm workspaces                                         |
+| コンテナ       | Docker (PostgreSQL のみ)                                |
 
 ---
 
@@ -176,12 +176,12 @@ pnpm dev
 
 4 つのサーバーが同時に起動します。
 
-| サービス | URL |
-|---------|-----|
-| API サーバー | http://localhost:3001 |
+| サービス             | URL                   |
+| -------------------- | --------------------- |
+| API サーバー         | http://localhost:3001 |
 | チャレンジ UI（ACS） | http://localhost:3004 |
-| テスト加盟店 | http://localhost:3002 |
-| 管理ダッシュボード | http://localhost:3003 |
+| テスト加盟店         | http://localhost:3002 |
+| 管理ダッシュボード   | http://localhost:3003 |
 
 ---
 
@@ -193,12 +193,12 @@ pnpm dev
 
 テスト用カード番号は固定で `4111 1111 1111 1111` です。**認証フローは商品ごとに紐付いて** いるので、試したいフローの商品を選んでください。
 
-| 商品 | フロー | 期待される挙動 |
-|-----|-------|--------------|
-| Wireless Earbuds Pro | Frictionless | チャレンジなしで即承認 |
-| Smartwatch Elite | OTP | OTP `123456` 入力 → Passkey 登録誘導（enroll-on-challenge） |
-| Mechanical Keyboard | WebAuthn | 既存 passkey で生体認証（無ければ OTP に切り替え）|
-| Gaming Headset | SPC | Secure Payment Confirmation 専用ダイアログ |
+| 商品                 | フロー       | 期待される挙動                                              |
+| -------------------- | ------------ | ----------------------------------------------------------- |
+| Wireless Earbuds Pro | Frictionless | チャレンジなしで即承認                                      |
+| Smartwatch Elite     | OTP          | OTP `123456` 入力 → Passkey 登録誘導（enroll-on-challenge） |
+| Mechanical Keyboard  | WebAuthn     | 既存 passkey で生体認証（無ければ OTP に切り替え）          |
+| Gaming Headset       | SPC          | Secure Payment Confirmation 専用ダイアログ                  |
 
 #### 基本的な操作手順
 
@@ -223,35 +223,35 @@ pnpm dev
 
 ### 3DS フロー
 
-| メソッド | パス | 説明 |
-|--------|------|------|
-| POST | `/threeds/areq` | 認証リクエスト（AReq）。RBA 判定を実行しフリクションレスorチャレンジを決定 |
-| POST | `/threeds/creq` | チャレンジリクエスト（CReq）。OTP コードを検証 |
-| GET | `/threeds/transaction/:acsTransId` | トランザクション情報取得 |
+| メソッド | パス                               | 説明                                                                       |
+| -------- | ---------------------------------- | -------------------------------------------------------------------------- |
+| POST     | `/threeds/areq`                    | 認証リクエスト（AReq）。RBA 判定を実行しフリクションレスorチャレンジを決定 |
+| POST     | `/threeds/creq`                    | チャレンジリクエスト（CReq）。OTP コードを検証                             |
+| GET      | `/threeds/transaction/:acsTransId` | トランザクション情報取得                                                   |
 
 ### WebAuthn（Passkey）
 
-| メソッド | パス | 説明 |
-|--------|------|------|
-| GET | `/webauthn/register/options` | Passkey 登録オプション取得（`extensions.payment.isPayment: true` を含む） |
-| POST | `/webauthn/register/verify` | Passkey 登録検証・保存（AAGUID もログに記録） |
-| GET | `/webauthn/authenticate/options` | Passkey 認証オプション取得 |
-| POST | `/webauthn/authenticate/verify` | Passkey 認証検証 |
+| メソッド | パス                             | 説明                                                                      |
+| -------- | -------------------------------- | ------------------------------------------------------------------------- |
+| GET      | `/webauthn/register/options`     | Passkey 登録オプション取得（`extensions.payment.isPayment: true` を含む） |
+| POST     | `/webauthn/register/verify`      | Passkey 登録検証・保存（AAGUID もログに記録）                             |
+| GET      | `/webauthn/authenticate/options` | Passkey 認証オプション取得                                                |
+| POST     | `/webauthn/authenticate/verify`  | Passkey 認証検証                                                          |
 
 ### SPC（Secure Payment Confirmation）
 
-| メソッド | パス | 説明 |
-|--------|------|------|
-| GET | `/spc/options` | SPC ceremony 用 challenge / rpId / payeeOrigin / 登録済み credential 一覧を返す |
-| POST | `/spc/verify` | SPC assertion 検証（`expectedType: 'payment.get'` を指定して `@simplewebauthn/server` で検証） |
+| メソッド | パス           | 説明                                                                                           |
+| -------- | -------------- | ---------------------------------------------------------------------------------------------- |
+| GET      | `/spc/options` | SPC ceremony 用 challenge / rpId / payeeOrigin / 登録済み credential 一覧を返す                |
+| POST     | `/spc/verify`  | SPC assertion 検証（`expectedType: 'payment.get'` を指定して `@simplewebauthn/server` で検証） |
 
 ### 管理
 
-| メソッド | パス | 説明 |
-|--------|------|------|
-| GET | `/admin/metrics` | KPI メトリクス取得（`?from=&to=`） |
-| GET | `/admin/transactions` | トランザクション一覧（`?limit=&offset=`） |
-| GET | `/admin/timeseries` | 時系列データ（`?from=&to=`） |
+| メソッド | パス                  | 説明                                      |
+| -------- | --------------------- | ----------------------------------------- |
+| GET      | `/admin/metrics`      | KPI メトリクス取得（`?from=&to=`）        |
+| GET      | `/admin/transactions` | トランザクション一覧（`?limit=&offset=`） |
+| GET      | `/admin/timeseries`   | 時系列データ（`?from=&to=`）              |
 
 ---
 
@@ -287,12 +287,12 @@ OtpSession（OTP 一時セッション）
 
 ### ブラウザ・OS 別 SPC 対応状況
 
-| ブラウザ / OS | SPC 対応 | 備考 |
-|--------------|---------|------|
-| Chrome / Edge on Windows | ✅ | Windows Hello（生体 or PIN）にバインドされる |
-| Chrome / Edge on macOS | ✅ | Touch ID / Apple Watch などにバインドされる |
-| Chrome on Android | ✅ | デバイスの生体認証にバインドされる |
-| Safari | ❌ | WebAuthn 単体は対応するが、Payment Request × WebAuthn 統合（SPC）は未実装 |
+| ブラウザ / OS            | SPC 対応 | 備考                                                                      |
+| ------------------------ | -------- | ------------------------------------------------------------------------- |
+| Chrome / Edge on Windows | ✅       | Windows Hello（生体 or PIN）にバインドされる                              |
+| Chrome / Edge on macOS   | ✅       | Touch ID / Apple Watch などにバインドされる                               |
+| Chrome on Android        | ✅       | デバイスの生体認証にバインドされる                                        |
+| Safari                   | ❌       | WebAuthn 単体は対応するが、Payment Request × WebAuthn 統合（SPC）は未実装 |
 
 ### Windows Hello は生体認証ではなく PIN を求める場合がある
 
@@ -309,11 +309,11 @@ Windows では、デバイスの設定によっては指紋や顔認証ではな
 
 ### 推奨テスト環境
 
-| 条件 | 推奨設定 |
-|------|---------|
-| SPC の動作確認 | Chrome / Edge on Windows or macOS、localhost アクセス |
-| PIN なし生体認証 | Windows Hello に指紋または顔認証が設定済みのデバイス |
-| 同一デバイス内で登録 → 利用 | 登録と認証を同じブラウザ（同じプロファイル）で行う |
+| 条件                        | 推奨設定                                              |
+| --------------------------- | ----------------------------------------------------- |
+| SPC の動作確認              | Chrome / Edge on Windows or macOS、localhost アクセス |
+| PIN なし生体認証            | Windows Hello に指紋または顔認証が設定済みのデバイス  |
+| 同一デバイス内で登録 → 利用 | 登録と認証を同じブラウザ（同じプロファイル）で行う    |
 
 ---
 

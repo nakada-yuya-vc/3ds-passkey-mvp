@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { verifySpcPaymentClientData } from './spc-linking'
+import { buildSpcDisplayData } from './spc-display'
 
 // Build a base64url-encoded clientDataJSON shaped like the SPC spec defines, so
 // we can drive `verifySpcPaymentClientData` from realistic payloads without
@@ -14,6 +15,8 @@ const EXPECTED = {
   payeeOrigin: 'https://merchant.example.com',
   value: '24800',
   currencyAlpha: 'JPY',
+  instrumentDisplayName: buildSpcDisplayData('Test Shop').instrument.displayName,
+  instrumentIcon: buildSpcDisplayData('Test Shop').instrument.icon,
 } as const
 
 function baselineClientData() {
@@ -27,7 +30,7 @@ function baselineClientData() {
       topOrigin: 'https://merchant.example.com',
       payeeOrigin: 'https://merchant.example.com',
       total: { value: '24800', currency: 'JPY' },
-      instrument: { displayName: 'Test Shop', icon: 'data:image/png;base64,AAAA' },
+      instrument: buildSpcDisplayData('Test Shop').instrument,
     },
   }
 }
@@ -95,6 +98,30 @@ describe('verifySpcPaymentClientData', () => {
     delete data.payment.total
     const result = verifySpcPaymentClientData(makeClientDataB64url(data), EXPECTED)
     expect(result).toEqual({ ok: false, reason: 'payment.total missing' })
+  })
+
+  it('rejects when payment.instrument is missing entirely', () => {
+    const data = baselineClientData() as { payment: Record<string, unknown> }
+    delete data.payment.instrument
+    const result = verifySpcPaymentClientData(makeClientDataB64url(data), EXPECTED)
+    expect(result).toEqual({ ok: false, reason: 'payment.instrument missing' })
+  })
+
+  it('rejects when payment.instrument.displayName does not match', () => {
+    const data = baselineClientData()
+    data.payment.instrument.displayName = 'Different Card'
+    const result = verifySpcPaymentClientData(makeClientDataB64url(data), EXPECTED)
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.reason).toMatch(/payment\.instrument\.displayName=Different Card/)
+    }
+  })
+
+  it('rejects when payment.instrument.icon does not match', () => {
+    const data = baselineClientData()
+    data.payment.instrument.icon = 'data:image/svg+xml,%3Csvg%20/%3E'
+    const result = verifySpcPaymentClientData(makeClientDataB64url(data), EXPECTED)
+    expect(result).toEqual({ ok: false, reason: 'payment.instrument.icon mismatch' })
   })
 
   it('rejects malformed base64url that is not parseable JSON', () => {

@@ -30,7 +30,7 @@ This MVP demonstrates replacing SMS one-time passwords with **device biometrics 
 - **OTP challenge** — SMS one-time password verification (mock mode: fixed code `123456`)
 - **Passkey challenge** — Biometric authentication with a previously registered passkey
 - **Enroll-on-challenge** — After successful OTP, users are prompted to register a passkey for future purchases
-- **SPC (Secure Payment Confirmation)** — Payment-specific authentication combining Payment Request API with WebAuthn. Credentials are registered with the `payment: { isPayment: true }` extension, which causes Chrome / Edge to bind them to the platform authenticator (Windows Hello / Touch ID / Android platform). This is intentional — it satisfies the possession-factor requirement of PSD2 SCA and EMVCo 3DS dynamic linking.
+- **SPC (Secure Payment Confirmation)** — Payment-specific authentication combining Payment Request API with WebAuthn. Credentials are registered with the `payment: { isPayment: true }` extension and authenticated with `payment.get`, so the server can verify the WebAuthn assertion and the transaction details shown by the browser. Browser Bound Key (BBK) handling is intentionally left out of scope because the requirement and deployment model are still under active W3C discussion.
 
 ### How the flow is selected
 
@@ -280,33 +280,28 @@ OtpSession  (temporary OTP session)
 
 ## Browser / OS Behaviour
 
-### SPC credentials are intentionally device-bound
+### SPC credential and BBK scope
 
-When a passkey is registered with the `payment: { isPayment: true }` extension, Chrome / Edge bind it to the **platform authenticator** (Windows Hello / Touch ID / Android platform authenticator) by design. This is not a workaround — it is what SPC requires to satisfy:
+This MVP registers passkeys with the `payment: { isPayment: true }` extension and verifies SPC assertions with `expectedType: 'payment.get'`. It also checks the signed `clientDataJSON.payment` payload against the issued transaction (`rpId`, `payeeOrigin`, amount, and currency).
 
-- PSD2 SCA's possession-factor requirement
-- EMVCo 3DS dynamic linking (the signature must come from a device the user physically holds)
+Browser Bound Key (BBK) support is intentionally not implemented in this MVP. The role of BBK in proving device possession, how it should be detected, and how strictly it should be required are still active W3C discussion topics. For that reason, this prototype should be read as an SPC / 3DS UX and protocol-integration MVP, not as a complete PSD2 SCA or EMVCo compliance implementation.
 
-Concretely:
+The AAGUID written to the database is an observation signal for the authenticator used at registration time (for example Windows Hello, Touch ID, or an anonymous platform authenticator). It is logged for review, but the MVP does not yet enforce an AAGUID or attestation allowlist.
 
-- The credential can only be used for SPC on the device + browser where it was registered.
-- It is **not** synced via iCloud Keychain / Google Password Manager.
-- The AAGUID written to the database identifies the underlying platform authenticator (e.g. Windows Hello).
-
-Inspect server logs for `'[register] credential created — authenticator identified by AAGUID'` to see which authenticator actually stored the credential (known AAGUIDs get labelled automatically).
+Inspect server logs for `'[register] credential created — authenticator identified by AAGUID'` to see which authenticator or passkey provider was observed at registration time (known AAGUIDs get labelled automatically).
 
 ### SPC support by browser / OS
 
 | Browser / OS             | SPC | Notes                                                                      |
 | ------------------------ | --- | -------------------------------------------------------------------------- |
-| Chrome / Edge on Windows | ✅  | Bound to Windows Hello (biometric or PIN)                                  |
-| Chrome / Edge on macOS   | ✅  | Bound to Touch ID / Apple Watch                                            |
-| Chrome on Android        | ✅  | Bound to the device's platform biometric                                   |
+| Chrome / Edge on Windows | ✅  | Uses the platform authenticator, such as Windows Hello biometric or PIN     |
+| Chrome / Edge on macOS   | ✅  | Uses the platform authenticator, such as Touch ID / Apple Watch            |
+| Chrome on Android        | ✅  | Uses the Android platform authenticator                                    |
 | Safari                   | ❌  | Supports WebAuthn but not the Payment Request × WebAuthn integration (SPC) |
 
 ### Windows Hello may prompt for PIN instead of biometrics
 
-Depending on the device configuration, Windows Hello may ask for the **PIN** rather than a fingerprint or face scan. This is by design and is still a valid SPC possession factor — the PIN never leaves the device, unlike an OTP.
+Depending on the device configuration, Windows Hello may ask for the **PIN** rather than a fingerprint or face scan. This is normal platform-authenticator behavior; the PIN remains local to the device and is not sent over the network like an OTP.
 
 ### Non-secure contexts (HTTP over LAN IP) block WebAuthn / SPC
 
@@ -371,8 +366,11 @@ lsof -ti:3001 | xargs kill
 ## Known gaps
 
 See [BACKLOG.md](./BACKLOG.md) for the items deliberately deferred (BBK
-support, attestation verification, line items, conformance tests, etc.) and
+positioning, attestation policy, line items, conformance tests, etc.) and
 the W3C SPC issues each one tracks.
+
+For external review, see also [SECURITY.md](./SECURITY.md) for the MVP security
+posture and [CONFORMANCE.md](./CONFORMANCE.md) for SPC conformance notes.
 
 ## License
 

@@ -1,6 +1,7 @@
 // Verifies the W3C Secure Payment Confirmation dynamic-linking invariants —
 // i.e. that the `payment` member of the signed clientDataJSON describes the
-// same transaction (rpId, payeeOrigin, total) that the server originally issued.
+// same transaction (rpId, payeeOrigin, total, and instrument identity) that the
+// server originally issued.
 //
 // This check is intentionally separate from `@simplewebauthn/server`'s signature
 // verification: SimpleWebAuthn validates that *some* `payment.get` ceremony with
@@ -21,6 +22,8 @@ export interface SpcLinkingExpected {
   payeeOrigin: string
   value: string
   currencyAlpha: string
+  instrumentDisplayName: string
+  instrumentIcon: string
 }
 
 export type SpcLinkingResult = { ok: true } | { ok: false; reason: string }
@@ -77,6 +80,20 @@ export function verifySpcPaymentClientData(
       ok: false,
       reason: `payment.total.currency=${String(total.currency)} (expected ${expected.currencyAlpha})`,
     }
+  }
+
+  const instrument = payment.instrument as { displayName?: unknown; icon?: unknown } | undefined
+  if (!instrument) return { ok: false, reason: 'payment.instrument missing' }
+
+  if (instrument.displayName !== expected.instrumentDisplayName) {
+    return {
+      ok: false,
+      reason: `payment.instrument.displayName=${String(instrument.displayName)} (expected ${expected.instrumentDisplayName})`,
+    }
+  }
+
+  if (instrument.icon !== expected.instrumentIcon) {
+    return { ok: false, reason: 'payment.instrument.icon mismatch' }
   }
 
   return { ok: true }

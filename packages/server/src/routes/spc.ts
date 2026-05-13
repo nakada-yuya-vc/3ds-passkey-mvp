@@ -5,6 +5,7 @@ import { prisma } from '../prisma'
 import { claimChallenge, issueChallenge } from '../services/challenge'
 import { currencyAlphaFromNumeric, formatMoneyForSpc } from '../services/money'
 import { verifySpcPaymentClientData } from '../services/spc-linking'
+import { buildSpcDisplayData } from '../services/spc-display'
 
 // SPC mandates an https payeeOrigin. In dev we run merchant on http://localhost,
 // so we accept SPC_PAYEE_ORIGIN as an explicit override (must be https) and
@@ -72,6 +73,7 @@ export async function spcRoutes(server: FastifyInstance) {
       const challenge = randomBytes(32).toString('base64url')
 
       const payeeOrigin = resolvePayeeOrigin(server.log)
+      const displayData = buildSpcDisplayData(transaction.merchantName)
 
       await issueChallenge({
         acsTransId,
@@ -102,6 +104,7 @@ export async function spcRoutes(server: FastifyInstance) {
           transports: c.transports,
         })),
         merchantName: transaction.merchantName,
+        instrument: displayData.instrument,
         // `total` is shaped exactly like W3C PaymentCurrencyAmount and is pre-formatted
         // for the currency's minor-unit exponent. Clients should pass it straight into
         // `new PaymentRequest(...).total.amount`; never re-format on the client.
@@ -179,11 +182,14 @@ export async function spcRoutes(server: FastifyInstance) {
       return reply.code(500).send({ error: 'Money formatting failed' })
     }
 
+    const displayData = buildSpcDisplayData(transaction.merchantName)
     const linking = verifySpcPaymentClientData(clientDataB64url, {
       rpId: rpID,
       payeeOrigin: resolvePayeeOrigin(server.log),
       value: expectedValue,
       currencyAlpha,
+      instrumentDisplayName: displayData.instrument.displayName,
+      instrumentIcon: displayData.instrument.icon,
     })
     if (!linking.ok) {
       server.log.warn(

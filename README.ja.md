@@ -28,7 +28,7 @@ EMV 3-D Secure チャレンジ認証において、SMS OTP をパスキー（Web
 - **OTP チャレンジ** — SMS ワンタイムパスワードによる本人確認（モック：`123456` 固定）
 - **Passkey チャレンジ** — 登録済みパスキーによる生体認証
 - **enroll-on-challenge** — OTP 成功後にその場でパスキーを登録、次回からパスキー認証へ移行
-- **SPC（Secure Payment Confirmation）** — Payment Request API と WebAuthn を統合した決済特化認証。`payment: { isPayment: true }` 拡張により device-bound credential として登録され、Windows Hello / Touch ID 等のプラットフォーム認証器に固定される（PSD2 SCA の possession factor / EMVCo 3DS dynamic linking 要件に対応）
+- **SPC（Secure Payment Confirmation）** — Payment Request API と WebAuthn を統合した決済特化認証。`payment: { isPayment: true }` 拡張で登録し、`payment.get` assertion とブラウザが表示した取引情報をサーバー側で検証します。Browser Bound Key（BBK）は要件・展開モデルが W3C で継続議論中のため、本 MVP では意図的にスコープ外としています。
 
 ### 認証フローの切り替え
 
@@ -277,28 +277,26 @@ OtpSession（OTP 一時セッション）
 
 ## ブラウザ・OS の挙動
 
-### SPC credential は意図的に device-bound
+### SPC credential と BBK のスコープ
 
-`payment: { isPayment: true }` 拡張で登録された credential は、Chrome / Edge が **プラットフォーム認証器に固定して** 作成します。これは PSD2 SCA の possession factor と EMVCo 3DS の dynamic linking 要件に合わせた SPC の設計上の仕様で、同期型 passkey とは扱いが異なります。
+本 MVP は `payment: { isPayment: true }` 拡張で passkey を登録し、SPC assertion を `expectedType: 'payment.get'` として検証します。また、署名された `clientDataJSON.payment` の内容が発行済みトランザクション（`rpId`、`payeeOrigin`、金額、通貨）と一致することを確認します。
 
-- 登録した端末・ブラウザでのみ SPC 認証に使える
-- iCloud / Google アカウントによる他端末への同期は行われない
-- OS の認証器（Windows Hello / Touch ID / Android platform authenticator）の AAGUID が記録される
+Browser Bound Key（BBK）は本 MVP では実装していません。BBK を device possession の証跡としてどう扱うか、どのように feature detection するか、どこまで必須にするかは W3C で継続議論中です。そのため、このリポジトリは完全な PSD2 SCA / EMVCo 準拠実装ではなく、SPC と 3DS チャレンジ UX の統合検証用 MVP として位置付けています。
 
-サーバーログの `'[register] credential created — authenticator identified by AAGUID'` で実際の保存先を確認できます（既知の AAGUID は label がつきます）。
+DB に保存する AAGUID は、登録時に観測された認証器（Windows Hello / Touch ID / 匿名 platform authenticator など）の参考情報です。レビュー用に記録しますが、現時点では AAGUID や attestation による allowlist enforcement は行っていません。
 
 ### ブラウザ・OS 別 SPC 対応状況
 
 | ブラウザ / OS            | SPC 対応 | 備考                                                                      |
 | ------------------------ | -------- | ------------------------------------------------------------------------- |
-| Chrome / Edge on Windows | ✅       | Windows Hello（生体 or PIN）にバインドされる                              |
-| Chrome / Edge on macOS   | ✅       | Touch ID / Apple Watch などにバインドされる                               |
-| Chrome on Android        | ✅       | デバイスの生体認証にバインドされる                                        |
+| Chrome / Edge on Windows | ✅       | Windows Hello（生体 or PIN）などの platform authenticator を利用           |
+| Chrome / Edge on macOS   | ✅       | Touch ID / Apple Watch などの platform authenticator を利用                |
+| Chrome on Android        | ✅       | Android platform authenticator を利用                                      |
 | Safari                   | ❌       | WebAuthn 単体は対応するが、Payment Request × WebAuthn 統合（SPC）は未実装 |
 
 ### Windows Hello は生体認証ではなく PIN を求める場合がある
 
-Windows では、デバイスの設定によっては指紋や顔認証ではなく **Windows Hello の PIN** を求められます。これは仕様通りで、SPC の possession factor としては有効です。PIN はデバイス内にのみ存在しネットワークを通らないため、OTP とは根本的に異なります。
+Windows では、デバイスの設定によっては指紋や顔認証ではなく **Windows Hello の PIN** を求められます。これは通常の platform authenticator の挙動です。PIN はデバイス内にのみ存在し、OTP のようにネットワーク送信されません。
 
 ### 非 Secure Context（HTTPS でも localhost でもない URL）では WebAuthn / SPC が動かない
 
@@ -340,7 +338,7 @@ allow="publickey-credentials-get *; publickey-credentials-create *; payment *"
 以下を順に確認してください。
 
 - 登録時に `payment: { isPayment: true }` 拡張が options に入っているか（`packages/server/src/routes/webauthn.ts`）。古いキー `isPaymentCredential` だと Chrome に無視され、credential が SPC マーカーなしで作られて `show()` 時に拒否されます。
-- サーバーログ `'[register] credential created'` の AAGUID で実際の保存先を確認。device-bound されているか。
+- サーバーログ `'[register] credential created'` の AAGUID で、登録時に観測された platform authenticator / passkey provider を確認。
 - 当該の credential を一度作り直す必要があるかもしれません（`pnpm db:reset` で全クリア）。
 
 ### SPC verify が `Unexpected authentication response type: payment.get` で 401
@@ -354,6 +352,18 @@ allow="publickey-credentials-get *; publickey-credentials-create *; payment *"
 netstat -ano | findstr :3001
 taskkill /PID <PID番号> /F
 ```
+
+---
+
+## 既知の制限
+
+詳細は [BACKLOG.md](./BACKLOG.md) を参照してください。BBK positioning、
+attestation policy、line items、conformance test など、MVP で意図的に
+スコープ外にした項目と対応する W3C SPC issue を整理しています。
+
+外部レビュー向けには、MVP のセキュリティ上の主張と非主張をまとめた
+[SECURITY.md](./SECURITY.md)、SPC 仕様との対応状況をまとめた
+[CONFORMANCE.md](./CONFORMANCE.md) も参照してください。
 
 ---
 

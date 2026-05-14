@@ -56,6 +56,7 @@ model Transaction {
   authType     AuthType
   authResult   AuthResult
   frictionless Boolean    @default(false)
+  acsState     AcsTransactionState @default(A_REQ_RECEIVED)
 
   requestedAt        DateTime  @default(now())
   challengeStartedAt DateTime?
@@ -69,6 +70,36 @@ model Transaction {
   ipAddress   String?
 
   challenges ChallengeSession[]
+  stateHistory AcsTransactionStateHistory[]
+}
+
+model AcsTransactionStateHistory {
+  id          String              @id @default(uuid())
+  acsTransId  String
+  fromState   AcsTransactionState?
+  toState     AcsTransactionState
+  reason      String?
+  createdAt   DateTime            @default(now())
+
+  transaction Transaction @relation(fields: [acsTransId], references: [acsTransId], onDelete: Cascade)
+
+  @@index([acsTransId, createdAt])
+  @@index([toState, createdAt])
+}
+
+model SpcAuthenticationAudit {
+  id               String   @id @default(uuid())
+  acsTransId       String
+  event            String
+  failureReason    String?
+  detail           String?
+  expectedPayment  Json?
+  receivedPayment  Json?
+  credentialIdHash String?
+  createdAt        DateTime @default(now())
+
+  @@index([acsTransId, createdAt])
+  @@index([event, failureReason])
 }
 
 enum AuthType {
@@ -82,6 +113,18 @@ enum AuthResult {
   AUTHENTICATED
   NOT_AUTHENTICATED
   ATTEMPTED
+}
+
+enum AcsTransactionState {
+  A_REQ_RECEIVED
+  FRICTIONLESS_AUTHENTICATED
+  CHALLENGE_REQUIRED
+  SPC_REQUESTED
+  SPC_AUTHENTICATED
+  OTP_FALLBACK_REQUIRED
+  OTP_AUTHENTICATED
+  PASSKEY_AUTHENTICATED
+  AUTHENTICATION_FAILED
 }
 
 enum ChallengePurpose {

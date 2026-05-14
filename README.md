@@ -57,6 +57,24 @@ Visualizes real-time metrics with 10-second auto-refresh:
 
 ---
 
+### Commercialization-oriented backend structure
+
+The server keeps the demo routes small and moves the SPC ceremony logic into a
+service layer so it can be lifted into an existing ACS implementation:
+
+- `packages/server/src/services/spc.ts` builds SPC requests, verifies
+  `payment.get` assertions, checks dynamic-linking data, records audit events,
+  and classifies failure reasons.
+- `packages/server/src/services/acs-state.ts` tracks the ACS-oriented
+  transaction state separately from the demo route names.
+- `SpcAuthenticationAudit` stores issued expected payment data, received signed
+  payment data summaries, failure reasons, and hashed credential IDs.
+- `AcsTransactionStateHistory` records state transitions such as
+  `CHALLENGE_REQUIRED -> SPC_REQUESTED -> SPC_AUTHENTICATED` or
+  `SPC_REQUESTED -> OTP_FALLBACK_REQUIRED`.
+
+---
+
 ## Architecture
 
 ```
@@ -230,7 +248,7 @@ Open **http://localhost:3003** to monitor authentication metrics in real time.
 | ------ | ---------------------------------- | ---------------------------------------------------------------------------------------- |
 | POST   | `/threeds/areq`                    | Authentication Request (AReq). Runs RBA evaluation and decides frictionless or challenge |
 | POST   | `/threeds/creq`                    | Challenge Request (CReq). Verifies the OTP code                                          |
-| POST   | `/threeds/fallback/otp`            | Issues an OTP and records the transaction as OTP when SPC is unavailable                 |
+| POST   | `/threeds/fallback/otp`            | Issues an OTP, records the SPC fallback reason, and moves the ACS state to OTP fallback  |
 | GET    | `/threeds/transaction/:acsTransId` | Fetch transaction details                                                                |
 
 ### WebAuthn (Passkey)
@@ -249,6 +267,10 @@ Open **http://localhost:3003** to monitor authentication metrics in real time.
 | GET    | `/spc/options` | Returns the SPC ceremony challenge, rpId, payeeOrigin, and the user's registered credentials |
 | POST   | `/spc/verify`  | Verifies an SPC assertion via `@simplewebauthn/server` with `expectedType: 'payment.get'`    |
 
+`/spc/options` and `/spc/verify` delegate to `packages/server/src/services/spc.ts`.
+That service also writes `SpcAuthenticationAudit` events and advances the ACS
+transaction state machine.
+
 ### Admin
 
 | Method | Path                  | Description                          |
@@ -260,6 +282,15 @@ Open **http://localhost:3003** to monitor authentication metrics in real time.
 ---
 
 ## Database Schema
+
+Current schema highlights:
+
+- `Transaction.acsState` stores the ACS-oriented state for the current
+  authentication attempt.
+- `AcsTransactionStateHistory` records transitions such as
+  `CHALLENGE_REQUIRED -> SPC_REQUESTED -> SPC_AUTHENTICATED`.
+- `SpcAuthenticationAudit` records SPC ceremony evidence and failure reasons
+  without storing raw credential IDs in the audit row.
 
 ```
 User ──── WebAuthnCredential  (passkey public key)
@@ -282,9 +313,9 @@ OtpSession  (temporary OTP session)
 
 ### SPC credential and BBK scope
 
-This MVP registers passkeys with the `payment: { isPayment: true }` extension and verifies SPC assertions with `expectedType: 'payment.get'`. It also checks the signed `clientDataJSON.payment` payload against the issued transaction (`rpId`, `payeeOrigin`, amount, and currency).
+This MVP registers passkeys with the `payment: { isPayment: true }` extension and verifies SPC assertions with `expectedType: 'payment.get'`. It also checks the signed `clientDataJSON.payment` payload against the issued transaction (`rpId`, `payeeOrigin`, total value, currency, and instrument identity).
 
-Browser Bound Key (BBK) support is intentionally not implemented in this MVP. The role of BBK in proving device possession, how it should be detected, and how strictly it should be required are still active W3C discussion topics. For that reason, this prototype should be read as an SPC / 3DS UX and protocol-integration MVP, not as a complete PSD2 SCA or EMVCo compliance implementation.
+Browser Bound Key (BBK) support is intentionally not implemented in this MVP. The role of BBK in proving device possession, how it should be detected, and how strictly it should be required are still active W3C discussion topics. This prototype keeps BBK neutral and focuses on the SPC / 3DS challenge integration path.
 
 The AAGUID written to the database is an observation signal for the authenticator used at registration time (for example Windows Hello, Touch ID, or an anonymous platform authenticator). It is logged for review, but the MVP does not yet enforce an AAGUID or attestation allowlist.
 
@@ -310,7 +341,27 @@ If you open the merchant from a phone using the host machine's LAN IP (e.g. `htt
 - An ngrok tunnel (`ngrok http 3002` / `ngrok http 3004`)
 - Vite's HTTPS dev mode (e.g. via `vite-plugin-mkcert`)
 
-When SPC is unavailable, this sample explicitly switches the challenge to OTP by calling `/threeds/fallback/otp`. The fallback is visible in the UI and the transaction is recorded as `OTP`, so SPC failures are not hidden in the metrics.
+When SPC is unavailable, this sample explicitly switches the challenge to OTP by calling `/threeds/fallback/otp`. The fallback is visible in the UI, the transaction is recorded as `OTP`, the ACS state moves to `OTP_FALLBACK_REQUIRED`, and the fallback reason is captured in `SpcAuthenticationAudit`.
+
+### ACS transaction states
+
+The MVP records an ACS-oriented state alongside each transaction. This makes the
+demo flow easier to compare with a production ACS state machine:
+
+```text
+A_REQ_RECEIVED
+  -> FRICTIONLESS_AUTHENTICATED
+  -> CHALLENGE_REQUIRED
+       -> SPC_REQUESTED
+            -> SPC_AUTHENTICATED
+            -> OTP_FALLBACK_REQUIRED
+            -> AUTHENTICATION_FAILED
+       -> OTP_AUTHENTICATED
+       -> PASSKEY_AUTHENTICATED
+```
+
+See [docs/3ds-spc-mapping.md](./docs/3ds-spc-mapping.md) for the current
+3DS/SPC mapping notes.
 
 ### Recommended test environment
 
@@ -366,11 +417,12 @@ lsof -ti:3001 | xargs kill
 ## Known gaps
 
 See [BACKLOG.md](./BACKLOG.md) for the items deliberately deferred (BBK
-positioning, attestation policy, line items, conformance tests, etc.) and
-the W3C SPC issues each one tracks.
+positioning, attestation policy, line items, WPT coverage, etc.) and the W3C
+SPC issues each one tracks.
 
 For external review, see also [SECURITY.md](./SECURITY.md) for the MVP security
-posture and [CONFORMANCE.md](./CONFORMANCE.md) for SPC conformance notes.
+posture, [CONFORMANCE.md](./CONFORMANCE.md) for SPC conformance notes, and
+[docs/3ds-spc-mapping.md](./docs/3ds-spc-mapping.md) for 3DS/SPC mapping notes.
 
 ## License
 

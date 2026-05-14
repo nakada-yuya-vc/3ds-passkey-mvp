@@ -51,7 +51,24 @@ EMV 3-D Secure チャレンジ認証において、SMS OTP をパスキー（Web
 - **認証方式内訳** — 円グラフ（FRICTIONLESS / OTP / PASSKEY / PASSKEY_SPC）
 - **平均認証時間比較** — 棒グラフ（OTP vs Passkey、単位：ミリ秒）
 - **時系列フリクションレス率** — 折れ線グラフ（直近 7 日、1 時間粒度）
-- **最新トランザクション一覧** — 取引ごとの認証方式・結果・所要時間
+- **最新トランザクション一覧** — 取引ごとの認証方式・ACS 状態・結果・所要時間
+
+---
+
+### 商用化を意識したバックエンド構成
+
+デモ用 route は薄く保ち、SPC ceremony の中核処理は既存 ACS に移植しやすい
+service 層へ寄せています。
+
+- `packages/server/src/services/spc.ts` は SPC request 生成、`payment.get`
+  assertion 検証、dynamic linking 検証、audit 記録、failure reason 分類を担当します。
+- `packages/server/src/services/acs-state.ts` はデモ route 名とは別に、
+  ACS 視点の transaction state を管理します。
+- `SpcAuthenticationAudit` は発行した支払い表示データ、署名済み支払いデータの要約、
+  failure reason、hash 化した credential ID を記録します。
+- `AcsTransactionStateHistory` は
+  `CHALLENGE_REQUIRED -> SPC_REQUESTED -> SPC_AUTHENTICATED` や
+  `SPC_REQUESTED -> OTP_FALLBACK_REQUIRED` のような状態遷移を記録します。
 
 ---
 
@@ -227,7 +244,7 @@ pnpm dev
 | -------- | ---------------------------------- | -------------------------------------------------------------------------- |
 | POST     | `/threeds/areq`                    | 認証リクエスト（AReq）。RBA 判定を実行しフリクションレスorチャレンジを決定 |
 | POST     | `/threeds/creq`                    | チャレンジリクエスト（CReq）。OTP コードを検証                             |
-| POST     | `/threeds/fallback/otp`            | SPC 利用不可時に OTP を発行し、トランザクションを OTP として記録            |
+| POST     | `/threeds/fallback/otp`            | SPC fallback reason を記録し、ACS 状態を OTP fallback へ遷移させて OTP を発行 |
 | GET      | `/threeds/transaction/:acsTransId` | トランザクション情報取得                                                   |
 
 ### WebAuthn（Passkey）
@@ -246,6 +263,9 @@ pnpm dev
 | GET      | `/spc/options` | SPC ceremony 用 challenge / rpId / payeeOrigin / 登録済み credential 一覧を返す                |
 | POST     | `/spc/verify`  | SPC assertion 検証（`expectedType: 'payment.get'` を指定して `@simplewebauthn/server` で検証） |
 
+`/spc/options` と `/spc/verify` は `packages/server/src/services/spc.ts` に委譲します。
+この service は `SpcAuthenticationAudit` への記録と ACS transaction state の遷移も行います。
+
 ### 管理
 
 | メソッド | パス                  | 説明                                      |
@@ -257,6 +277,14 @@ pnpm dev
 ---
 
 ## データベーススキーマ
+
+現在のスキーマ上の主なポイント:
+
+- `Transaction.acsState` は現在の ACS 視点の状態を保持します。
+- `AcsTransactionStateHistory` は
+  `CHALLENGE_REQUIRED -> SPC_REQUESTED -> SPC_AUTHENTICATED` のような遷移を記録します。
+- `SpcAuthenticationAudit` は SPC ceremony の証跡と failure reason を記録します。
+  audit row には raw credential ID は保存しません。
 
 ```
 User ──── WebAuthnCredential（Passkey 公開鍵）
@@ -279,9 +307,9 @@ OtpSession（OTP 一時セッション）
 
 ### SPC credential と BBK のスコープ
 
-本 MVP は `payment: { isPayment: true }` 拡張で passkey を登録し、SPC assertion を `expectedType: 'payment.get'` として検証します。また、署名された `clientDataJSON.payment` の内容が発行済みトランザクション（`rpId`、`payeeOrigin`、金額、通貨）と一致することを確認します。
+本 MVP は `payment: { isPayment: true }` 拡張で passkey を登録し、SPC assertion を `expectedType: 'payment.get'` として検証します。また、署名された `clientDataJSON.payment` の内容が発行済みトランザクション（`rpId`、`payeeOrigin`、合計金額、通貨、instrument identity）と一致することを確認します。
 
-Browser Bound Key（BBK）は本 MVP では実装していません。BBK を device possession の証跡としてどう扱うか、どのように feature detection するか、どこまで必須にするかは W3C で継続議論中です。そのため、このリポジトリは完全な PSD2 SCA / EMVCo 準拠実装ではなく、SPC と 3DS チャレンジ UX の統合検証用 MVP として位置付けています。
+Browser Bound Key（BBK）は本 MVP では実装していません。BBK を device possession の証跡としてどう扱うか、どのように feature detection するか、どこまで必須にするかは W3C で継続議論中です。本リポジトリでは BBK について中立の立場を取り、SPC と 3DS チャレンジの統合経路に焦点を当てています。
 
 DB に保存する AAGUID は、登録時に観測された認証器（Windows Hello / Touch ID / 匿名 platform authenticator など）の参考情報です。レビュー用に記録しますが、現時点では AAGUID や attestation による allowlist enforcement は行っていません。
 
@@ -305,7 +333,25 @@ Windows では、デバイスの設定によっては指紋や顔認証ではな
 - `ngrok http 3002` / `ngrok http 3004` のようなトンネル
 - `vite-plugin-mkcert` 等で Vite dev server を HTTPS 化
 
-fallback は UI 上で明示され、トランザクションの `authType` も `OTP` に更新されます。これにより、SPC 失敗がメトリクス上で隠れないようにしています。
+fallback は UI 上で明示され、トランザクションの `authType` は `OTP`、ACS 状態は `OTP_FALLBACK_REQUIRED` に更新されます。fallback reason は `SpcAuthenticationAudit` にも記録されるため、SPC 失敗がメトリクスや監査上で隠れないようにしています。
+
+### ACS transaction state
+
+MVP では各トランザクションに ACS 視点の状態を記録します。これにより、デモ用 route の流れを商用 ACS の state machine と比較しやすくしています。
+
+```text
+A_REQ_RECEIVED
+  -> FRICTIONLESS_AUTHENTICATED
+  -> CHALLENGE_REQUIRED
+       -> SPC_REQUESTED
+            -> SPC_AUTHENTICATED
+            -> OTP_FALLBACK_REQUIRED
+            -> AUTHENTICATION_FAILED
+       -> OTP_AUTHENTICATED
+       -> PASSKEY_AUTHENTICATED
+```
+
+3DS/SPC の対応関係は [docs/3ds-spc-mapping.md](./docs/3ds-spc-mapping.md) に整理しています。
 
 ### 推奨テスト環境
 
@@ -358,12 +404,13 @@ taskkill /PID <PID番号> /F
 ## 既知の制限
 
 詳細は [BACKLOG.md](./BACKLOG.md) を参照してください。BBK positioning、
-attestation policy、line items、conformance test など、MVP で意図的に
+attestation policy、line items、WPT coverage など、MVP で意図的に
 スコープ外にした項目と対応する W3C SPC issue を整理しています。
 
 外部レビュー向けには、MVP のセキュリティ上の主張と非主張をまとめた
 [SECURITY.md](./SECURITY.md)、SPC 仕様との対応状況をまとめた
-[CONFORMANCE.md](./CONFORMANCE.md) も参照してください。
+[CONFORMANCE.md](./CONFORMANCE.md)、3DS/SPC mapping notes の
+[docs/3ds-spc-mapping.md](./docs/3ds-spc-mapping.md) も参照してください。
 
 ---
 

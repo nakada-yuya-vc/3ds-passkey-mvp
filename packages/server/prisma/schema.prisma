@@ -71,6 +71,21 @@ model Transaction {
   challenges ChallengeSession[]
 }
 
+model SpcAuthenticationAudit {
+  id               String   @id @default(uuid())
+  acsTransId       String
+  event            String
+  failureReason    String?
+  detail           String?
+  expectedPayment  Json?
+  receivedPayment  Json?
+  credentialIdHash String?
+  createdAt        DateTime @default(now())
+
+  @@index([acsTransId, createdAt])
+  @@index([event, failureReason])
+}
+
 enum AuthType {
   FRICTIONLESS
   OTP

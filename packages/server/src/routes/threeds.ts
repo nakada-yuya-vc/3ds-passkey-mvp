@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid'
 import { prisma } from '../prisma'
 import { updateDeviceHistory } from '../services/rba'
 import { generateOtp, verifyOtp } from '../services/otp'
+import { recordSpcFallbackToOtp } from '../services/spc'
 
 type AuthFlow = 'frictionless' | 'otp' | 'webauthn' | 'spc'
 
@@ -159,6 +160,12 @@ export async function threedsRoutes(server: FastifyInstance) {
         authResult: 'ATTEMPTED',
         challengeStartedAt: transaction.challengeStartedAt ?? new Date(),
       },
+    })
+    await recordSpcFallbackToOtp({
+      acsTransId: acsTransID,
+      reason,
+      previousAuthType: transaction.authType,
+      log: server.log,
     })
 
     server.log.info({ acsTransID, previousAuthType: transaction.authType, reason }, '[fallback] OTP issued')

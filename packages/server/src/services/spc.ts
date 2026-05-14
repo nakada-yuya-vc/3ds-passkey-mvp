@@ -7,6 +7,7 @@ import { prisma } from '../prisma'
 import { claimChallenge, issueChallenge } from './challenge'
 import { currencyAlphaFromNumeric, formatMoneyForSpc } from './money'
 import { buildSpcDisplayData } from './spc-display'
+import { AcsTransactionState, transitionAcsState } from './acs-state'
 import {
   base64urlDecodeToString,
   verifySpcPaymentClientData,
@@ -322,6 +323,12 @@ export async function createSpcAuthenticationRequest({
     rpId,
     origin: rpOrigin,
   })
+  await transitionAcsState({
+    acsTransId,
+    fromState: transaction.acsState,
+    toState: AcsTransactionState.SPC_REQUESTED,
+    reason: 'spc_options_issued',
+  })
 
   const expectedPayment = expectedPaymentForAudit({
     rpId,
@@ -410,6 +417,12 @@ export async function verifySpcAuthentication({
       receivedPayment,
       credentialId,
     })
+    await transitionAcsState({
+      acsTransId,
+      fromState: transaction.acsState,
+      toState: AcsTransactionState.AUTHENTICATION_FAILED,
+      reason: SpcFailureReason.ChallengeNotFound,
+    })
     return failure(400, 'No challenge found', SpcFailureReason.ChallengeNotFound)
   }
 
@@ -422,6 +435,12 @@ export async function verifySpcAuthentication({
       receivedPayment,
       credentialId,
     })
+    await transitionAcsState({
+      acsTransId,
+      fromState: transaction.acsState,
+      toState: AcsTransactionState.AUTHENTICATION_FAILED,
+      reason: SpcFailureReason.CredentialNotFound,
+    })
     return failure(400, 'Credential not found', SpcFailureReason.CredentialNotFound)
   }
 
@@ -431,6 +450,12 @@ export async function verifySpcAuthentication({
       event: SpcAuditEvent.VerifyFailed,
       failureReason: SpcFailureReason.MissingClientData,
       credentialId,
+    })
+    await transitionAcsState({
+      acsTransId,
+      fromState: transaction.acsState,
+      toState: AcsTransactionState.AUTHENTICATION_FAILED,
+      reason: SpcFailureReason.MissingClientData,
     })
     return failure(400, 'Missing clientDataJSON', SpcFailureReason.MissingClientData)
   }
@@ -512,6 +537,12 @@ export async function verifySpcAuthentication({
       receivedPayment,
       credentialId,
     })
+    await transitionAcsState({
+      acsTransId,
+      fromState: transaction.acsState,
+      toState: AcsTransactionState.AUTHENTICATION_FAILED,
+      reason: SpcFailureReason.DynamicLinkingMismatch,
+    })
     return failure(
       401,
       'Dynamic linking mismatch',
@@ -547,6 +578,12 @@ export async function verifySpcAuthentication({
         receivedPayment,
         credentialId,
       })
+      await transitionAcsState({
+        acsTransId,
+        fromState: transaction.acsState,
+        toState: AcsTransactionState.AUTHENTICATION_FAILED,
+        reason: SpcFailureReason.AssertionVerificationFailed,
+      })
       return failure(401, 'SPC verification failed', SpcFailureReason.AssertionVerificationFailed)
     }
 
@@ -559,6 +596,12 @@ export async function verifySpcAuthentication({
         expectedPayment,
         receivedPayment,
         credentialId,
+      })
+      await transitionAcsState({
+        acsTransId,
+        fromState: transaction.acsState,
+        toState: AcsTransactionState.AUTHENTICATION_FAILED,
+        reason: SpcFailureReason.UserVerificationMissing,
       })
       return failure(401, 'User verification not performed', SpcFailureReason.UserVerificationMissing)
     }
@@ -577,8 +620,15 @@ export async function verifySpcAuthentication({
       data: {
         authType: 'PASSKEY_SPC',
         authResult: 'AUTHENTICATED',
+        acsState: AcsTransactionState.SPC_AUTHENTICATED,
         authenticatedAt: new Date(),
       },
+    })
+    await transitionAcsState({
+      acsTransId,
+      fromState: transaction.acsState,
+      toState: AcsTransactionState.SPC_AUTHENTICATED,
+      reason: 'spc_verified',
     })
 
     await recordSpcAudit(log, {
@@ -601,6 +651,12 @@ export async function verifySpcAuthentication({
       expectedPayment,
       receivedPayment,
       credentialId,
+    })
+    await transitionAcsState({
+      acsTransId,
+      fromState: transaction.acsState,
+      toState: AcsTransactionState.AUTHENTICATION_FAILED,
+      reason: SpcFailureReason.AssertionVerificationFailed,
     })
     return failure(401, 'SPC verification failed', SpcFailureReason.AssertionVerificationFailed)
   }

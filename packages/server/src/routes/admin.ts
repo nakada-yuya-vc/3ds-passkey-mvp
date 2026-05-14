@@ -43,6 +43,7 @@ export async function adminRoutes(server: FastifyInstance) {
         purchaseAmount: t.purchaseAmount,
         authType: t.authType,
         authResult: t.authResult,
+        acsState: t.acsState,
         frictionless: t.frictionless,
         requestedAt: t.requestedAt,
         authenticatedAt: t.authenticatedAt,

@@ -35,6 +35,7 @@ existing certified ACS / 3DS Server product.
 | WebAuthn assertion verification | `verifySpcAuthentication()` calls SimpleWebAuthn with `expectedType: "payment.get"`, expected challenge, origin, RP ID, and UV required. | Production must align this with the ACS authentication result, RReq evidence, counter handling, credential lifecycle, and issuer policy. |
 | OTP fallback | `/threeds/fallback/otp` switches a pending SPC attempt to OTP and records `FALLBACK_TO_OTP` audit events. | Certified OTP behavior should remain the fallback baseline. SPC fallback reasons should feed operational monitoring and certification test cases. |
 | Authentication result | `Transaction.authType = PASSKEY_SPC` and `authResult = AUTHENTICATED` after successful verify. | In a certified ACS, this result must be translated into the proper 3DS transaction status, authentication method, and result message behavior. |
+| ACS transaction state | `Transaction.acsState` stores the current ACS state; `AcsTransactionStateHistory` records transitions. | This is the repository's bridge from MVP route names to a commercial ACS state machine. It should be mapped to the certified product's internal transaction states before EMVCo testing. |
 | Audit / evidence | `SpcAuthenticationAudit` records issued expected payment data, received payment data, failure reason, and hashed credential ID. | Commercial audit retention, privacy controls, dispute evidence, and log integrity requirements still need product-specific policy. |
 
 ## W3C SPC Data Coverage
@@ -69,6 +70,35 @@ decide whether SPC is:
 Those paths affect where the WebAuthn Credential List, SPC Transaction Data,
 assertion, result status, and fallback are represented in certified 3DS
 messages. The MVP is currently closer to path 1.
+
+## ACS State Machine
+
+The MVP keeps an explicit ACS-oriented transaction state alongside the existing
+`authType` and `authResult` fields. The current state is stored on
+`Transaction.acsState`; every transition is appended to
+`AcsTransactionStateHistory`.
+
+```mermaid
+stateDiagram-v2
+  [*] --> A_REQ_RECEIVED
+  A_REQ_RECEIVED --> FRICTIONLESS_AUTHENTICATED: frictionless
+  A_REQ_RECEIVED --> CHALLENGE_REQUIRED: OTP / passkey / SPC challenge
+  CHALLENGE_REQUIRED --> SPC_REQUESTED: /spc/options
+  SPC_REQUESTED --> SPC_AUTHENTICATED: /spc/verify success
+  SPC_REQUESTED --> OTP_FALLBACK_REQUIRED: client fallback
+  OTP_FALLBACK_REQUIRED --> OTP_AUTHENTICATED: OTP verified
+  CHALLENGE_REQUIRED --> OTP_AUTHENTICATED: OTP verified
+  CHALLENGE_REQUIRED --> PASSKEY_AUTHENTICATED: WebAuthn verified
+  SPC_REQUESTED --> AUTHENTICATION_FAILED: server-side SPC verify failure
+  CHALLENGE_REQUIRED --> AUTHENTICATION_FAILED: explicit failure completion
+```
+
+This is still an MVP state model. A certified ACS will usually have more states
+for protocol message receipt/sending, challenge window lifecycle, timeouts,
+RReq/RRes handling, retries, and decoupled or out-of-band flows. The important
+step is that the repository no longer treats `/threeds/*` and `/spc/*`
+endpoints as the only source of truth; they now drive a transaction state that
+can be compared to a commercial ACS implementation.
 
 ## Implementation Backlog
 

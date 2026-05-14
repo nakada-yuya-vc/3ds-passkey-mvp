@@ -14,6 +14,9 @@ const { prismaMock } = vi.hoisted(() => ({
     spcAuthenticationAudit: {
       create: vi.fn(),
     },
+    acsTransactionStateHistory: {
+      create: vi.fn(),
+    },
     otpSession: {
       upsert: vi.fn(),
     },
@@ -36,6 +39,7 @@ function b64urlJson(value: unknown): string {
 function transactionWithCredential() {
   return {
     acsTransId: 'acs-123',
+    acsState: 'CHALLENGE_REQUIRED',
     purchaseCurrency: '392',
     purchaseAmount: 24800,
     merchantName: 'Test Shop',
@@ -73,6 +77,8 @@ describe('SPC route integration', () => {
       }),
     )
     prismaMock.spcAuthenticationAudit.create.mockResolvedValue({ id: 'audit-1' })
+    prismaMock.transaction.update.mockResolvedValue({ acsTransId: 'acs-123' })
+    prismaMock.acsTransactionStateHistory.create.mockResolvedValue({ id: 'state-1' })
 
     const app = makeApp()
     const response = await app.inject({
@@ -110,6 +116,14 @@ describe('SPC route integration', () => {
         }),
       }),
     })
+    expect(prismaMock.acsTransactionStateHistory.create).toHaveBeenCalledWith({
+      data: {
+        acsTransId: 'acs-123',
+        fromState: 'CHALLENGE_REQUIRED',
+        toState: 'SPC_REQUESTED',
+        reason: 'spc_options_issued',
+      },
+    })
   })
 
   it('rejects SPC assertions whose signed payment total differs from the issued transaction', async () => {
@@ -126,6 +140,8 @@ describe('SPC route integration', () => {
       }),
     )
     prismaMock.spcAuthenticationAudit.create.mockResolvedValue({ id: 'audit-1' })
+    prismaMock.transaction.update.mockResolvedValue({ acsTransId: 'acs-123' })
+    prismaMock.acsTransactionStateHistory.create.mockResolvedValue({ id: 'state-1' })
 
     const displayData = buildSpcDisplayData('Test Shop')
     const assertion = {
@@ -171,6 +187,14 @@ describe('SPC route integration', () => {
         }),
       }),
     })
+    expect(prismaMock.acsTransactionStateHistory.create).toHaveBeenCalledWith({
+      data: {
+        acsTransId: 'acs-123',
+        fromState: 'CHALLENGE_REQUIRED',
+        toState: 'AUTHENTICATION_FAILED',
+        reason: 'DYNAMIC_LINKING_MISMATCH',
+      },
+    })
   })
 
   it('records client-side SPC fallback when the flow switches to OTP', async () => {
@@ -178,11 +202,13 @@ describe('SPC route integration', () => {
       acsTransId: 'acs-123',
       authResult: 'ATTEMPTED',
       authType: 'PASSKEY_SPC',
+      acsState: 'SPC_REQUESTED',
       challengeStartedAt: null,
     })
     prismaMock.otpSession.upsert.mockResolvedValue({ id: 'otp-1' })
     prismaMock.transaction.update.mockResolvedValue({ acsTransId: 'acs-123' })
     prismaMock.spcAuthenticationAudit.create.mockResolvedValue({ id: 'audit-1' })
+    prismaMock.acsTransactionStateHistory.create.mockResolvedValue({ id: 'state-1' })
 
     const app = makeApp()
     const response = await app.inject({
@@ -199,6 +225,7 @@ describe('SPC route integration', () => {
       data: expect.objectContaining({
         authType: 'OTP',
         authResult: 'ATTEMPTED',
+        acsState: 'OTP_FALLBACK_REQUIRED',
       }),
     })
     expect(prismaMock.spcAuthenticationAudit.create).toHaveBeenCalledWith({
@@ -208,6 +235,14 @@ describe('SPC route integration', () => {
         failureReason: 'CLIENT_SPC_UNAVAILABLE',
         detail: 'spc_unavailable; previousAuthType=PASSKEY_SPC',
       }),
+    })
+    expect(prismaMock.acsTransactionStateHistory.create).toHaveBeenCalledWith({
+      data: {
+        acsTransId: 'acs-123',
+        fromState: 'SPC_REQUESTED',
+        toState: 'OTP_FALLBACK_REQUIRED',
+        reason: 'spc_unavailable',
+      },
     })
   })
 })

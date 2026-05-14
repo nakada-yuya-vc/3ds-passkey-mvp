@@ -4,6 +4,12 @@ import { prisma } from '../prisma'
 import { updateDeviceHistory } from '../services/rba'
 import { generateOtp, verifyOtp } from '../services/otp'
 import { recordSpcFallbackToOtp } from '../services/spc'
+import {
+  AcsTransactionState,
+  initialAcsStateForAuthType,
+  recordInitialAcsState,
+  transitionAcsState,
+} from '../services/acs-state'
 
 type AuthFlow = 'frictionless' | 'otp' | 'webauthn' | 'spc'
 
@@ -83,6 +89,7 @@ export async function threedsRoutes(server: FastifyInstance) {
 
     const isFreictionless = authType === 'FRICTIONLESS'
     const acsTransId = uuidv4()
+    const acsState = initialAcsStateForAuthType(authType)
 
     await prisma.transaction.create({
       data: {
@@ -97,12 +104,18 @@ export async function threedsRoutes(server: FastifyInstance) {
         authType,
         authResult: 'ATTEMPTED',
         frictionless: isFreictionless,
+        acsState,
         deviceKnown: true,
         deviceHash,
         ipAddress,
         challengeStartedAt: isFreictionless ? null : new Date(),
         authenticatedAt: isFreictionless ? new Date() : null,
       },
+    })
+    await recordInitialAcsState({
+      acsTransId,
+      toState: acsState,
+      reason: `authFlow=${authFlow}; authType=${authType}`,
     })
 
     server.log.info(
@@ -158,8 +171,15 @@ export async function threedsRoutes(server: FastifyInstance) {
       data: {
         authType: 'OTP',
         authResult: 'ATTEMPTED',
+        acsState: AcsTransactionState.OTP_FALLBACK_REQUIRED,
         challengeStartedAt: transaction.challengeStartedAt ?? new Date(),
       },
+    })
+    await transitionAcsState({
+      acsTransId: acsTransID,
+      fromState: transaction.acsState,
+      toState: AcsTransactionState.OTP_FALLBACK_REQUIRED,
+      reason: reason ?? 'fallback_to_otp',
     })
     await recordSpcFallbackToOtp({
       acsTransId: acsTransID,
@@ -205,9 +225,16 @@ export async function threedsRoutes(server: FastifyInstance) {
       where: { acsTransId: acsTransID },
       data: {
         authResult: 'AUTHENTICATED',
+        acsState: AcsTransactionState.OTP_AUTHENTICATED,
         otpCompletedAt: new Date(),
         authenticatedAt: new Date(),
       },
+    })
+    await transitionAcsState({
+      acsTransId: acsTransID,
+      fromState: transaction.acsState,
+      toState: AcsTransactionState.OTP_AUTHENTICATED,
+      reason: 'otp_verified',
     })
 
     server.log.info({ acsTransID }, '[creq] OTP verified')
@@ -238,6 +265,7 @@ export async function threedsRoutes(server: FastifyInstance) {
         authType: transaction.authType,
         merchantName: transaction.merchantName,
         purchaseAmount: transaction.purchaseAmount,
+        acsState: transaction.acsState,
         hasPasskey: (transaction.user?.credentials.length ?? 0) > 0,
         credentials: transaction.user?.credentials.map(c => ({
           credentialId: c.credentialId,
@@ -253,13 +281,31 @@ export async function threedsRoutes(server: FastifyInstance) {
     Body: { acsTransID: string; result: 'AUTHENTICATED' | 'NOT_AUTHENTICATED' }
   }>('/complete', async (request, reply) => {
     const { acsTransID, result } = request.body
+    const transaction = await prisma.transaction.findUnique({
+      where: { acsTransId: acsTransID },
+    })
+
+    if (!transaction) {
+      return reply.code(404).send({ error: 'Transaction not found' })
+    }
+
+    const nextState = result === 'AUTHENTICATED'
+      ? AcsTransactionState.OTP_AUTHENTICATED
+      : AcsTransactionState.AUTHENTICATION_FAILED
 
     await prisma.transaction.update({
       where: { acsTransId: acsTransID },
       data: {
         authResult: result,
+        acsState: nextState,
         authenticatedAt: result === 'AUTHENTICATED' ? new Date() : undefined,
       },
+    })
+    await transitionAcsState({
+      acsTransId: acsTransID,
+      fromState: transaction.acsState,
+      toState: nextState,
+      reason: `challenge_complete_${result.toLowerCase()}`,
     })
 
     return { success: true }

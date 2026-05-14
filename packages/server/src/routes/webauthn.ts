@@ -8,6 +8,7 @@ import {
 import type { AuthenticatorTransportFuture } from '@simplewebauthn/types'
 import { prisma } from '../prisma'
 import { claimChallenge, issueChallenge } from '../services/challenge'
+import { AcsTransactionState, transitionAcsState } from '../services/acs-state'
 
 export async function webauthnRoutes(server: FastifyInstance) {
   const rpID = process.env.RP_ID || 'localhost'
@@ -166,9 +167,16 @@ export async function webauthnRoutes(server: FastifyInstance) {
         data: {
           authType: 'PASSKEY',
           authResult: 'AUTHENTICATED',
+          acsState: AcsTransactionState.PASSKEY_AUTHENTICATED,
           authenticatedAt: new Date(),
           enrolledPasskey: true,
         },
+      })
+      await transitionAcsState({
+        acsTransId,
+        fromState: transaction.acsState,
+        toState: AcsTransactionState.PASSKEY_AUTHENTICATED,
+        reason: 'passkey_registered_after_challenge',
       })
 
       return { success: true, credentialId: credentialID }
@@ -285,7 +293,17 @@ export async function webauthnRoutes(server: FastifyInstance) {
 
       await prisma.transaction.update({
         where: { acsTransId },
-        data: { authResult: 'AUTHENTICATED', authenticatedAt: new Date() },
+        data: {
+          authResult: 'AUTHENTICATED',
+          acsState: AcsTransactionState.PASSKEY_AUTHENTICATED,
+          authenticatedAt: new Date(),
+        },
+      })
+      await transitionAcsState({
+        acsTransId,
+        fromState: transaction.acsState,
+        toState: AcsTransactionState.PASSKEY_AUTHENTICATED,
+        reason: 'passkey_verified',
       })
 
       server.log.info({ acsTransId, credentialId }, '[webauthn] authenticated')
